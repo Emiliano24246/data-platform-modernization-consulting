@@ -67,21 +67,6 @@ Transversal: IAM de mínimo privilegio · CloudWatch (alertas) · Parameter Stor
 | AWS Systems Manager Parameter Store | Credenciales de las APIs |
 | AWS CloudFormation | Infraestructura como código |
 
-## Estructura del repositorio
-
-```
-data-platform-modernization-consulting/
-├── README.md
-├── .gitignore
-├── football/
-│   └── docs/consultoria/     # rfp.md y sow.md
-├── binance/
-│   └── docs/consultoria/     # rfp.md y sow.md
-└── asteroid/
-    └── docs/consultoria/     # rfp.md y sow.md
-```
-
-Cuando se implemente un proyecto, se agregan en su carpeta `src/` (código), `infra/` (plantillas de CloudFormation) y `tests/` (pruebas).
 
 ## Estado del proyecto
 
@@ -98,10 +83,11 @@ Equipo 3, Temas Selectos de Ingeniería, Facultad de Ingeniería, UNAM.
 
 | Nombre | Rol |
 |---|---|
-| _Nombre_ | Lead Data Engineer |
-| _Nombre_ | Data Engineer |
-| _Nombre_ | Data Engineer |
-| _Nombre_ | Data Engineer |
+| Tristán Qesen Sánchez Mayen | Lead Data Engineer |
+| Darinka Sandoval Hernández  | Data Engineer |
+| Emiliano Román Salgado Cruz | Data Engineer |
+| Angel Hazel Tapia Ledesma| Data Engineer |
+| Caballero García Yessica Lizeth| Data Engineer |
 
 ## Propósito profesional
 
@@ -109,4 +95,3 @@ El repositorio aplica conceptos reales de ingeniería de datos: arquitecturas de
 
 ## Convenciones
 - Cada proyecto vive en su carpeta y siempre tiene `rfp.md` y `sow.md`.
-- Nombres de archivos y carpetas en minúsculas, con guiones y sin acentos ni espacios.
