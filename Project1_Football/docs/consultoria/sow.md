@@ -76,21 +76,21 @@ Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un even
 ## 7. Plan por hitos
 | Hito | Qué se entrega | Evidencia | Fecha | Horas |
 |---|---|---|---|---|
-| 0 Arranque | Diagnóstico detallado y diseño de arquitectura[cite: 19, 20, 21]. | Plantilla base en CloudFormation y repositorio configurado[cite: 19, 20, 21]. | Sem 2 | 40 |
-| 1 Ingesta | Ingesta serverless y persistencia en Capa Bronze[cite: 21]. | Lambda ejecutando con EventBridge guardando JSONs en S3[cite: 19, 21]. | Sem 4 | 80 |
-| 2 Optimización | Capa Silver en Parquet, idempotencia y alertas[cite: 21]. | Archivos Parquet particionados por temporada y notificación SNS probada[cite: 19, 21]. | Sem 7 | 90 |
-| 3 Capa Analítica | Vistas de KPIs tácticos en Athena[cite: 21]. | Queries de validación ejecutadas en < 10 s escaneando < 100 MB[cite: 19, 20, 21]. | Sem 9 | 60 |
-| 4 Entrega | Documentación FinOps, Runbook y apagado EC2[cite: 21]. | Reporte AWS Calculator, AWS Budget activo y Runbook entregado[cite: 19, 20, 21]. | Sem 10 | 30 |
+| 0 Arranque | Diagnóstico detallado y diseño de arquitectura. | Plantilla base en CloudFormation y repositorio configurado. | Sem 2 | 40 |
+| 1 Ingesta | Ingesta serverless y persistencia en Capa Bronze. | Lambda ejecutando con EventBridge guardando JSONs en S3. | Sem 4 | 80 |
+| 2 Optimización | Capa Silver en Parquet, idempotencia y alertas. | Archivos Parquet particionados por temporada y notificación SNS probada. | Sem 7 | 90 |
+| 3 Capa Analítica | Vistas de KPIs tácticos en Athena. | Queries de validación ejecutadas en < 10 s escaneando < 100 MB. | Sem 9 | 60 |
+| 4 Entrega | Documentación FinOps, Runbook y apagado EC2. | Reporte AWS Calculator, AWS Budget activo y Runbook entregado. | Sem 10 | 30 |
 | **Total** | | | | **300 h** |
 
 ---
 
 ## 8. Equipo y responsabilidades
-- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Diseño de la arquitectura en CloudFormation, modelo de seguridad IAM, estrategia FinOps y coordinación general. Reporta a la Dirección de Selecciones Nacionales. (120 h).
-- **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de la transformación a Parquet en Capa Silver, estrategia de particionamiento por temporada e idempotencia. Reporta a Tristan. (120 h).
-- **Roman Emiliano Salgado Cruz (Data Engineer):** Desarrollo de funciones Lambda de ingesta (Capa Bronze), integración con la API-Football y automatización en EventBridge. Reporta a Tristan. (120 h).
-- **Angel Hazel Tapia Ledesma (Data Engineer):** Construcción del catálogo en AWS Glue, Vistas analíticas de KPIs en Athena y pruebas de rendimiento de consultas SQL. Reporta a Tristan. (120 h).
-- **Yessica Lizeth Caballero Garcia (Data Engineer):** Configuración de alertas CloudWatch/SNS, gestión de credenciales en Parameter Store y elaboración del Runbook de operación. Reporta a Tristan. (120 h).
+- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Diseño de la arquitectura en CloudFormation, modelo de seguridad IAM, estrategia FinOps y coordinación general. Reporta a la Dirección de Selecciones Nacionales.
+- **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de la transformación a Parquet en Capa Silver, estrategia de particionamiento por temporada e idempotencia. Reporta a Tristan. 
+- **Roman Emiliano Salgado Cruz (Data Engineer):** Desarrollo de funciones Lambda de ingesta (Capa Bronze), integración con la API-Football y automatización en EventBridge. Reporta a Tristan. 
+- **Angel Hazel Tapia Ledesma (Data Engineer):** Construcción del catálogo en AWS Glue, Vistas analíticas de KPIs en Athena y pruebas de rendimiento de consultas SQL. Reporta a Tristan. 
+- **Yessica Lizeth Caballero Garcia (Data Engineer):** Configuración de alertas CloudWatch/SNS, gestión de credenciales en Parameter Store y elaboración del Runbook de operación. Reporta a Tristan. 
 
 ---
 
@@ -113,11 +113,11 @@ Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un even
 ## 11. Presupuesto
 | Concepto | Horas | Tarifa MXN/h | Subtotal MXN |
 |---|---|---|---|
-| Lead Data Engineer (Tristan) | 120 | $350.00 | $42,000 |
-| Data Engineer (Yessica Lizeth) | 120 | $280.00 | $33,600 |
-| Data Engineer (Darinka) | 120 | $280.00 | $33,600 |
-| Data Engineer (Emiliano) | 120 | $280.00 | $33,600 |
-| Data Engineer (Angel Hazel) | 120 | $280.00 | $33,600 |
+| Lead Data Engineer (Tristan) | 80 | $350.00 | $42,000 |
+| Data Engineer (Yessica Lizeth) | 55 | $280.00 | $33,600 |
+| Data Engineer (Darinka) | 55 | $280.00 | $33,600 |
+| Data Engineer (Emiliano) | 55 | $280.00 | $33,600 |
+| Data Engineer (Angel Hazel) | 55 | $280.00 | $33,600 |
 | **Total**
 | **Total**| **300** | | |
 

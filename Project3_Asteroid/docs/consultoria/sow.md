@@ -6,9 +6,9 @@
 **Versión:** 2.0
 **Equipo:** 
 - Tristan Qesen Sanchez Mayen - Lead Data Engineer
-- Sandoval Hernandez Darinka - Data Engineer
-- Salgado Cruz Roman Emiliano - Data Engineer
-- Tapia Ledesma Angel Hazel - Data Engineer
+- Darinka Sandoval Hernandez - Data Engineer
+- Roman Emiliano Salgado Cruz - Data Engineer
+- Angel Hazel Tapia Ledesma - Data Engineer
 - Yessica Lizeth Caballero Garcia - Data Engineer
 
 ---
@@ -85,11 +85,11 @@ Desplegaremos una arquitectura serverless por lotes mediante plantillas de AWS C
 ---
 
 ## 8. Equipo y responsabilidades
-- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Arquitectura serverless, diseño de plantillas CloudFormation, modelo de seguridad IAM y coordinación del proyecto. Reporta a la Dirección General de Exposiciones. (80 h).
-- **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de las reglas de calidad de datos, validación de esquemas JSON y canalización de registros a la ruta de cuarentena en S3. Reporta a Tristan. (55 h).
-- **Roman Emiliano Salgado Cruz (Data Engineer):** Transformación de datos a formato Parquet en Capa Silver, pruebas de idempotencia y reejecución sin duplicados. Reporta a Tristan. (55 h).
-- **Angel Hazel Tapia Ledesma (Data Engineer):** Modelado de las tablas/vistas en Athena (Gold), implementación de las fórmulas de Risk Score y pruebas de rendimiento de consultas. Reporta a Tristan. (55 h).
-- **Yessica Lizeth Caballero Garcia (Data Engineer):** Implementación de la ingesta desatendida en Lambda, orquestación con EventBridge, configuración de monitoreo CloudWatch/SNS y elaboración del Runbook. Reporta a Tristan. (55 h).
+- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Arquitectura serverless, diseño de plantillas CloudFormation, modelo de seguridad IAM y coordinación del proyecto. Reporta a la Dirección General de Exposiciones. 
+- **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de las reglas de calidad de datos, validación de esquemas JSON y canalización de registros a la ruta de cuarentena en S3. Reporta a Tristan.
+- **Roman Emiliano Salgado Cruz (Data Engineer):** Transformación de datos a formato Parquet en Capa Silver, pruebas de idempotencia y reejecución sin duplicados. Reporta a Tristan.
+- **Angel Hazel Tapia Ledesma (Data Engineer):** Modelado de las tablas/vistas en Athena (Gold), implementación de las fórmulas de Risk Score y pruebas de rendimiento de consultas. Reporta a Tristan.
+- **Yessica Lizeth Caballero Garcia (Data Engineer):** Implementación de la ingesta desatendida en Lambda, orquestación con EventBridge, configuración de monitoreo CloudWatch/SNS y elaboración del Runbook. Reporta a Tristan.
 
 ---
 
