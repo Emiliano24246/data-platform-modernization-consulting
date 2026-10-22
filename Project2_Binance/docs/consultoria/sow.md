@@ -66,12 +66,13 @@ Desplegaremos una arquitectura serverless por lotes utilizando CloudFormation. E
 ## 7. Plan por hitos
 | Hito | Qué se entrega | Evidencia | Fecha | Horas |
 |---|---|---|---|---|
-| 0 Arranque | Diagnóstico técnico, línea base y stack base. | Línea base de 90 días recibida; conexión Lambda a Binance validada; diagnóstico documentado; buckets y AWS Budget en CloudFormation. | Sem 2 | 40 |
-| 1 Extracción | E2: Capas Bronze/Silver e idempotencia. | Dos ejecuciones del mismo día con resultados idénticos; prueba de falla ante datos incompletos. | Sem 4 | 60 |
-| 2 Indicadores | E3: Cálculo e indicadores. | Suite de pruebas de regresión en verde con diferencia ≤ 0.000001 frente a los 90 días. | Sem 6 | 70 |
-| 3 Señales | E4: Tabla de señales en Athena. | Tabla Gold en Athena validada; consultas en Athena < 10 s. | Sem 8 | 50 |
-| 4 Operación desatendida | E1: Ejecución por 7 días y alertas. | Historial de 7 corridas diarias exitosas desatendidas y prueba de alerta por SNS. | Sem 9 | 50 |
-| 5 Cierre | E5/E6: CloudFormation, permisos y Runbook. | Despliegue limpio desde CloudFormation, permisos IAM verificados y simulacro con el Runbook. | Sem 10 | 30 |
+| 0 Arranque | Diagnóstico técnico, línea base y stack base[cite: 17, 18]. | Línea base de 90 días recibida; conexión Lambda a Binance validada; diagnóstico documentado; buckets y AWS Budget en CloudFormation[cite: 17, 18]. | Sem 2 | 40 |
+| 1 Extracción | E2: Capas Bronze/Silver e idempotencia[cite: 18]. | Dos ejecuciones del mismo día con resultados idénticos; prueba de falla ante datos incompletos[cite: 18]. | Sem 4 | 60 |
+| 2 Indicadores | E3: Cálculo e indicadores[cite: 18]. | Suite de pruebas de regresión en verde con diferencia ≤ 0.000001 frente a los 90 días[cite: 16, 18]. | Sem 6 | 70 |
+| 3 Señales | E4: Tabla de señales en Athena[cite: 18]. | Tabla Gold en Athena validada; consultas en Athena < 10 s[cite: 16, 18]. | Sem 8 | 50 |
+| 4 Operación desatendida | E1: Ejecución por 7 días y alertas[cite: 18]. | Historial de 7 corridas diarias exitosas desatendidas y prueba de alerta por SNS[cite: 16, 18]. | Sem 9 | 50 |
+| 5 Cierre | E5/E6: CloudFormation, permisos y Runbook[cite: 18]. | Despliegue limpio desde CloudFormation, permisos IAM verificados y simulacro con el Runbook[cite: 16, 18]. | Sem 10 | 30 |
+| **Total** | | | | **300 h** |
 
 ## 8. Equipo y responsabilidades
 - **Tristan Qesen Sanchez Mayen (Lead Data Engineer):**  Arquitectura serverless, plantillas CloudFormation, seguridad IAM y coordinación del proyecto. Reporta a la Dirección de Operaciones y Riesgos.

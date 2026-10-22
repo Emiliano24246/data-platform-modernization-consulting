@@ -76,12 +76,12 @@ Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un even
 ## 7. Plan por hitos
 | Hito | Qué se entrega | Evidencia | Fecha | Horas |
 |---|---|---|---|---|
-| **0 Arranque** | Diagnóstico detallado y diseño de arquitectura. | Plantilla base en CloudFormation y repositorio configurado. | Sem 2 | 80 |
-| **1 Ingesta** | Ingesta serverless y persistencia en Capa Bronze. | Lambda ejecutando con EventBridge guardando JSONs en S3. | Sem 4 | 160 |
-| **2 Optimización** | Capa Silver en Parquet, idempotencia y alertas. | Archivos Parquet particionados por temporada y notificación SNS probada. | Sem 7 | 180 |
-| **3 Capa Analítica** | Vistas de KPIs tácticos en Athena. | Queries de validación ejecutadas en < 10 s escaneando < 100 MB. | Sem 9 | 120 |
-| **4 Entrega** | Documentación FinOps, Runbook y apagado EC2. | Reporte AWS Calculator, AWS Budget activo y Runbook entregado. | Sem 10 | 60 |
-| **Total** | | | | **600 h** |
+| 0 Arranque | Diagnóstico detallado y diseño de arquitectura[cite: 19, 20, 21]. | Plantilla base en CloudFormation y repositorio configurado[cite: 19, 20, 21]. | Sem 2 | 40 |
+| 1 Ingesta | Ingesta serverless y persistencia en Capa Bronze[cite: 21]. | Lambda ejecutando con EventBridge guardando JSONs en S3[cite: 19, 21]. | Sem 4 | 80 |
+| 2 Optimización | Capa Silver en Parquet, idempotencia y alertas[cite: 21]. | Archivos Parquet particionados por temporada y notificación SNS probada[cite: 19, 21]. | Sem 7 | 90 |
+| 3 Capa Analítica | Vistas de KPIs tácticos en Athena[cite: 21]. | Queries de validación ejecutadas en < 10 s escaneando < 100 MB[cite: 19, 20, 21]. | Sem 9 | 60 |
+| 4 Entrega | Documentación FinOps, Runbook y apagado EC2[cite: 21]. | Reporte AWS Calculator, AWS Budget activo y Runbook entregado[cite: 19, 20, 21]. | Sem 10 | 30 |
+| **Total** | | | | **300 h** |
 
 ---
 
