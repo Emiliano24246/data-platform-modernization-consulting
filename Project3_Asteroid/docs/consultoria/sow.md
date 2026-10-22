@@ -14,8 +14,7 @@
 ---
 
 ## 1. Resumen ejecutivo
-Entendimos que procesan a mano un JSON complejo de la API de la NASA y sus pantallas muestran datos desactualizados. Entregaremos un pipeline serverless e idempotente en AWS que extrae diariamente los datos de asteroides, los valida mandando errores a cuarentena, calcula el Risk Score y la energía de impacto, y deja tablas consultables en Athena. La solución incluye plantillas en CloudFormation, alertas en CloudWatch/SNS, AWS Budget y Runbook de operación. Se ejecutará en 10 semanas por un monto total de $110,000 MXN.
-
+Entendimos que procesan a mano un JSON complejo de la API de la NASA y sus pantallas muestran datos desactualizados. Entregaremos un pipeline serverless e idempotente en AWS que extrae diariamente los datos de asteroides, los valida mandando errores a cuarentena, calcula el Risk Score y la energía de impacto, y deja tablas consultables en Athena o lectores locales. La solución incluye plantillas en CloudFormation, alertas en CloudWatch/SNS, AWS Budget y Runbook de operación. Se ejecutará en 10 semanas por un monto total de $110,000 MXN, garantizando un costo operativo mensual en AWS de $0.00 MXN.
 ---
 
 ## 2. Diagnóstico
@@ -53,7 +52,7 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 | **E2** | Capa Silver y Cuarentena de Calidad | (a) Transformación del JSON crudo a Parquet en S3 Silver. (b) Registros con nulos en campos obligatorios o cuyo esquema no coincida con el esperado son rechazados, enviados a una ruta de cuarentena en S3 y registrados. | 2 |
 | **E3** | Capa Gold y Métricas en Athena | (a) Tablas en Athena con las métricas de Risk Score y energía de impacto calculadas aplicando las fórmulas entregadas por el cliente. (b) La consulta de aceptación sobre 30 días de datos termina en menos de 10 segundos. | 3 |
 | **E4** | Infraestructura como Código y AWS Budget | (a) Plantillas en CloudFormation que despliegan toda la infraestructura desde cero. (b) Alerta activa de AWS Budget configurada y probada. (c) Permisos IAM configurados bajo el principio de mínimo privilegio. | 4 |
-| **E5** | Documentación y Runbook | Guía de operación (Runbook) entregada; el equipo técnico de los museos resuelve un escenario de falla simulado utilizando únicamente la documentación entregada]. | 4 |
+| **E5** | Documentación y Runbook | Guía de operación (Runbook) entregada; el equipo técnico de los museos resuelve un escenario de falla simulado utilizando únicamente la documentación entregada. | 4 |
 
 ---
 
@@ -85,11 +84,11 @@ Desplegaremos una arquitectura serverless por lotes mediante plantillas de AWS C
 ---
 
 ## 8. Equipo y responsabilidades
-- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Arquitectura serverless, diseño de plantillas CloudFormation, modelo de seguridad IAM y coordinación del proyecto. Reporta a la Dirección General de Exposiciones. 
-- **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de las reglas de calidad de datos, validación de esquemas JSON y canalización de registros a la ruta de cuarentena en S3. Reporta a Tristan.
-- **Roman Emiliano Salgado Cruz (Data Engineer):** Transformación de datos a formato Parquet en Capa Silver, pruebas de idempotencia y reejecución sin duplicados. Reporta a Tristan.
-- **Angel Hazel Tapia Ledesma (Data Engineer):** Modelado de las tablas/vistas en Athena (Gold), implementación de las fórmulas de Risk Score y pruebas de rendimiento de consultas. Reporta a Tristan.
-- **Yessica Lizeth Caballero Garcia (Data Engineer):** Implementación de la ingesta desatendida en Lambda, orquestación con EventBridge, configuración de monitoreo CloudWatch/SNS y elaboración del Runbook. Reporta a Tristan.
+- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Arquitectura serverless, diseño de plantillas CloudFormation, modelo de seguridad IAM y coordinación del proyecto. Reporta a la Dirección General de Exposiciones (80 h).
+- **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de las reglas de calidad de datos, validación de esquemas JSON y canalización de registros a la ruta de cuarentena en S3. Reporta a Tristan (55 h).
+- **Roman Emiliano Salgado Cruz (Data Engineer):** Transformación de datos a formato Parquet en Capa Silver, pruebas de idempotencia y reejecución sin duplicados. Reporta a Tristan (55 h).
+- **Angel Hazel Tapia Ledesma (Data Engineer):** Modelado de las tablas/vistas en Athena (Gold), implementación de las fórmulas de Risk Score y pruebas de rendimiento de consultas. Reporta a Tristan (55 h).
+- **Yessica Lizeth Caballero Garcia (Data Engineer):** Implementación de la ingesta desatendida en Lambda, orquestación con EventBridge, configuración de monitoreo CloudWatch/SNS y elaboración del Runbook. Reporta a Tristan (55 h).
 
 ---
 
@@ -112,14 +111,15 @@ Desplegaremos una arquitectura serverless por lotes mediante plantillas de AWS C
 ## 11. Presupuesto
 | Concepto | Horas | Tarifa MXN/h | Subtotal MXN |
 |---|---|---|---|
-| Lead Data Engineer (Tristan) | 80 | $350.00 | $28,000 |
-| Data Engineer (Darinka) | 55 | $280.00 | $15,400 |
-| Data Engineer (Emiliano) | 55 | $280.00 | $15,400 |
-| Data Engineer (Angel Hazel) | 55 | $280.00 | $15,400 |
-| Data Engineer (Yessica Lizeth) | 55 | $280.00 | $15,400 |
-| Colchón de imprevistos (10%)
-| Costo estimado de AWS (Proyección 10 semanas)
-| **Total**| **300** | | |
+| Lead Data Engineer (Tristan) | 80 | $350.00 | $28,000.00 |
+| Data Engineer (Yessica Lizeth) | 55 | $280.00 | $15,400.00 |
+| Data Engineer (Darinka) | 55 | $280.00 | $15,400.00 |
+| Data Engineer (Emiliano) | 55 | $280.00 | $15,400.00 |
+| Data Engineer (Angel Hazel) | 55 | $280.00 | $15,400.00 |
+| Colchón de imprevistos (10%) | - | - | $8,960.00 |
+| Costo estimado de AWS (Proyección 10 semanas)* | - | - | $0.00 |
+| **Total** | **300** | | **$110,000.00** |
+
 
 
 
