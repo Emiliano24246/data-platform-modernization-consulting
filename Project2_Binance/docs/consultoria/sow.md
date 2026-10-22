@@ -1,4 +1,4 @@
-# SOW: Asteroid Data Engineering Project
+# SOW: Binance-Data-Engineering-Project
 
 **Consultora:** TAD Data Consulting
 **Cliente:** MarketMatrix (Binance Data Engineering Project), Dirección de Operaciones y Riesgos
@@ -12,7 +12,7 @@
 - Yessica Lizeth Caballero Garcia - Data Engineer
 
 ## 1. Resumen ejecutivo
-Entendimos que la extracción diaria de Binance es inestable, la limpieza depende de pasos manuales y las señales carecen de validación de exactitud. Entregaremos un pipeline serverless por lotes (diario) que extrae klines, valida completitud, calcula RSI, Bollinger y MACD con tolerancia de 0.000001 frente a su línea base y publica las señales en Athena. La solución incluye plantillas CloudFormation, alertas CloudWatch/SNS, pruebas de regresión y AWS Budget. Se entregará en 10 semanas por un monto total de $110,000 MXN.
+Entendimos que la extracción diaria de Binance es inestable, la limpieza depende de pasos manuales y las señales carecen de validación de exactitud. Entregaremos un pipeline serverless por lotes (diario) que extrae klines, valida completitud, calcula RSI, Bollinger y MACD con tolerancia de 0.000001 frente a su línea base y publica las señales en Athena. La solución incluye plantillas CloudFormation, alertas CloudWatch/SNS, pruebas de regresión y AWS Budget. Se entregará en 10 semanas por un monto total de $110,000 MXN, garantizando un costo operativo mensual en AWS de $0.00 MXN.
 
 ## 2. Diagnóstico
 A partir de la revisión técnica del entorno actual, identificamos los siguientes hallazgos:
@@ -48,7 +48,7 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 | E1 | Pipeline orquestado con alertas | (a) El pipeline por lotes corre en su horario durante 7 días seguidos sin intervención manual. (b) Una falla provocada en la ingesta genera una alerta por correo vía SNS en menos de 15 minutos. | 4 |
 | E2 | Capas Bronze y Silver con calidad e idempotencia | (a) Reejecutar la carga para el mismo día produce resultados idénticos en S3 sin filas duplicadas. (b) Si la vela diaria falta o está incompleta, la corrida falla, alerta y no publica. (c) Registros no válidos se aislan. | 1 |
 | E3 | Indicadores y pruebas de regresión | (a) Los valores de RSI, Bollinger y MACD coinciden con la línea base con diferencia absoluta ≤ 0.000001 sobre los 90 días de BTCUSDT entregados. (b) La suite de pruebas de regresión pasa e identifica desviaciones. | 2 |
-| E4 | Tabla de señales en Athena | (a) La tabla Gold se reconstruye en cada corrida vía CTAS con las señales COMPRA FUERTE, VENTA o MANTENER. (b) Las señales coinciden al 100% con la línea base de 90 días. (c) La consulta de aceptación en Athena responde en < 10. | 3 |
+| E4 | Tabla de señales en Athena | (a) La tabla Gold se reconstruye en cada corrida vía CTAS con las señales COMPRA FUERTE, VENTA o MANTENER. (b) Las señales coinciden al 100% con la línea base de 90 días. (c) La consulta de aceptación en Athena responde en < 10 segundos.
 | E5 | Plantillas CloudFormation y AWS Budget | (a) Plantillas en CloudFormation despliegan la infraestructura desde cero. (b) Permisos IAM de mínimo privilegio. (c) Alerta activa de AWS Budget configurada y probada. | 5 |
 | E6 | Documentación y Runbook | Documentación de arquitectura y Runbook entregados; el equipo del cliente resuelve una falla simulada guiándose únicamente con el Runbook. | 5 |
 
@@ -75,11 +75,11 @@ Desplegaremos una arquitectura serverless por lotes utilizando CloudFormation. E
 | **Total** | | | | **300 h** |
 
 ## 8. Equipo y responsabilidades
-- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):**  Arquitectura serverless, plantillas CloudFormation, seguridad IAM y coordinación del proyecto. Reporta a la Dirección de Operaciones y Riesgos.
-- **Darinka Sandoval Hernandez (Data Engineer):** Implementación en Python de RSI, Bollinger y MACD, precisión numérica y suite de pruebas de regresión. Reporta a Tristan.
-- **Roman Emiliano Salgado Cruz (Data Engineer):**  Extracción de klines desde la API de Binance en AWS Lambda, manejo de reintentos e ingesta en Capa Bronze. Reporta a Tristan.
-- **Angel Hazel Tapia Ledesma (Data Engineer):** Generación de la tabla Gold de señales en Athena vía CTAS, regla de triple confirmación y asignación de roles de solo lectura. Reporta a Tristan.
-- **Yessica Lizeth Caballero Garcia (Data Engineer):** Validación de completitud y calidad, pruebas de idempotencia, seguimiento de la corrida de 7 días, monitoreo CloudWatch/SNS y Runbook. Reporta a Tristan.
+- **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Arquitectura serverless, plantillas CloudFormation, seguridad IAM y coordinación del proyecto. Reporta a la Dirección de Operaciones y Riesgos (80 h).
+- **Darinka Sandoval Hernandez (Data Engineer):** Implementación en Python de RSI, Bollinger y MACD, precisión numérica y suite de pruebas de regresión. Reporta a Tristan (55 h).
+- **Roman Emiliano Salgado Cruz (Data Engineer):** Extracción de klines desde la API de Binance en AWS Lambda, manejo de reintentos e ingesta en Capa Bronze. Reporta a Tristan (55 h).
+- **Angel Hazel Tapia Ledesma (Data Engineer):** Generación de la tabla Gold de señales en Athena vía CTAS, regla de triple confirmación y asignación de roles de solo lectura. Reporta a Tristan (55 h).
+- **Yessica Lizeth Caballero Garcia (Data Engineer):** Validación de completitud y calidad, pruebas de idempotencia, seguimiento de la corrida de 7 días, monitoreo CloudWatch/SNS y Runbook. Reporta a Tristan (55 h).
 
 ## 9. Supuestos y dependencias del cliente
 - El cliente entregará el dataset de 90 días de BTCUSDT con las klines y resultados esperados de los indicadores al cierre del Hito 0 (Semana 2).
@@ -101,14 +101,15 @@ Desplegaremos una arquitectura serverless por lotes utilizando CloudFormation. E
 ## 11. Presupuesto
 | Concepto | Horas | Tarifa MXN/h | Subtotal MXN |
 |---|---|---|---|
-| Lead Data Engineer (Tristan) | 80 | $350.00 | $28,000 |
-| Data Engineer (Yessica Lizeth) | 55 | $280.00 | $15,400 |
-| Data Engineer (Darinka) | 55 | $280.00 | $15,400 |
-| Data Engineer (Emiliano) | 55 | $280.00 | $15,400 |
-| Data Engineer (Angel Hazel) | 55 | $280.00 | $15,400 |
-| Colchón de imprevistos (10%)
-| Costo estimado de AWS
-| **Total**| **300** | | |
+| Lead Data Engineer (Tristan) | 80 | $350.00 | $28,000.00 |
+| Data Engineer (Yessica Lizeth) | 55 | $280.00 | $15,400.00 |
+| Data Engineer (Darinka) | 55 | $280.00 | $15,400.00 |
+| Data Engineer (Emiliano) | 55 | $280.00 | $15,400.00 |
+| Data Engineer (Angel Hazel) | 55 | $280.00 | $15,400.00 |
+| Colchón de imprevistos (10%) | - | - | $8,960.00 |
+| Costo estimado de AWS (Proyección 10 semanas)* | - | - | $0.00 |
+| **Total** | **300** | | **$110,000.00** |
+
 
  
 

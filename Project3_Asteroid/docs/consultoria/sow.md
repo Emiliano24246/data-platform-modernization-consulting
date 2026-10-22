@@ -1,4 +1,4 @@
-# SOW: Binance-Data-Engineering-Project
+# SOW: Asteroid-dataEngineering-project
 
 **Consultora:** TAD Data Consulting
 **Cliente:** Asteroid DataEngineering Project (red de museos y planetarios), Dirección General de Exposiciones
