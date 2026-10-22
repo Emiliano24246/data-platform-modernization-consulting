@@ -1,6 +1,6 @@
 # SOW: Football Soccer Data Engineering Project
 
-**Consultora:** TAD Data Consulting
+**Consultora:** data-platform-modernization-consulting 
 **Cliente:** Football Soccer Data Engineering Project (Dirección de Selecciones Nacionales)
 **Respuesta al RFP del:** 13/10/2026
 **Versión:** 2.0

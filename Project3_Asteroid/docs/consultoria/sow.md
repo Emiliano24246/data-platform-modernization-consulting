@@ -1,6 +1,6 @@
 # SOW: Asteroid-dataEngineering-project
 
-**Consultora:** TAD Data Consulting
+**Consultora:** data-platform-modernization-consulting 
 **Cliente:** Asteroid DataEngineering Project (red de museos y planetarios), Dirección General de Exposiciones
 **Respuesta al RFP del:** 13 de octubre de 2026
 **Versión:** 2.0

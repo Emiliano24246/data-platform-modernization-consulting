@@ -1,6 +1,6 @@
 # SOW: Binance-Data-Engineering-Project
 
-**Consultora:** TAD Data Consulting
+**Consultora:** data-platform-modernization-consulting 
 **Cliente:** MarketMatrix (Binance Data Engineering Project), Dirección de Operaciones y Riesgos
 **Respuesta al RFP del:** 13/10/2026
 **Versión:** 2.0
