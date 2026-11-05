@@ -3,31 +3,34 @@
   "title": "Football Soccer Data Engineering Project",
   "routing": "elbow",
   "groups": [
-    { "id": "grupo-ingesta", "label": "Ingesta Serverless", "color": "coral", "region": "AWS" },
-    { "id": "grupo-lake", "label": "Data Lake (Medallion)", "color": "limon" },
-    { "id": "grupo-analitica", "label": "Procesamiento y Analítica", "color": "menta" }
+    { "id": "aws-cloud", "label": "AWS Cloud (us-east-1) - Free Tier", "icon": "aws/group-cloud", "color": "coral", "region": "us-east-1" },
+    { "id": "capa-ingesta", "label": "Capa de Ingesta Serverless", "color": "melocoton", "parent": "aws-cloud" },
+    { "id": "capa-lake", "label": "Capa de Data Lake (Medallion)", "color": "limon", "parent": "aws-cloud" },
+    { "id": "s3-lake", "label": "Amazon S3 Data Lake", "color": "menta", "parent": "capa-lake" },
+    { "id": "capa-proc", "label": "Capa de Procesamiento y Transformación", "color": "rosa", "parent": "aws-cloud" },
+    { "id": "capa-ana", "label": "Capa de Analítica", "color": "melocoton", "parent": "aws-cloud" }
   ],
   "nodes": [
-    { "id": "api-ext", "label": "API-Football", "type": "external", "x": -500, "y": 0 },
-    { "id": "cron_daily", "label": "EventBridge Cron", "type": "events", "icon": "aws/eventbridge", "sub": "00:05 UTC", "group": "grupo-ingesta", "x": -200, "y": -120 },
-    { "id": "api_key", "label": "SSM Parameter Store", "type": "storage", "sub": "API Key", "group": "grupo-ingesta", "x": -200, "y": 120 },
-    { "id": "lambda_ext", "label": "Lambda Extracción", "type": "function", "icon": "aws/lambda", "group": "grupo-ingesta", "x": 0, "y": 0 },
-    { "id": "s3_bronze", "label": "S3 Bronze", "type": "storage", "icon": "aws/s3", "group": "grupo-lake", "layer": "bronze", "x": 250, "y": 0 },
-    { "id": "lambda_trans", "label": "Lambda Limpieza", "type": "function", "icon": "aws/lambda", "group": "grupo-analitica", "x": 500, "y": 0 },
-    { "id": "s3_silver", "label": "S3 Silver", "type": "storage", "icon": "aws/s3", "group": "grupo-lake", "layer": "silver", "x": 750, "y": 0 },
-    { "id": "analytics_db", "label": "Amazon Athena", "type": "analytics", "icon": "aws/athena", "group": "grupo-analitica", "x": 750, "y": 200 },
-    { "id": "s3_gold", "label": "S3 Gold", "type": "storage", "icon": "aws/s3", "group": "grupo-lake", "layer": "gold", "x": 1000, "y": 200 },
-    { "id": "usuarios", "label": "Cuerpo Técnico", "type": "user", "sub": "Consultas analíticas", "x": 1000, "y": 400 }
+    { "id": "api-ext", "label": "API-Football", "type": "external", "x": -450, "y": -50 },
+    { "id": "cron", "label": "EventBridge Cron", "sub": "cron_daily", "type": "events", "icon": "aws/eventbridge", "group": "capa-ingesta", "x": -150, "y": -120 },
+    { "id": "ssm", "label": "SSM Parameter Store", "sub": "API Key", "type": "storage", "group": "capa-ingesta", "x": 250, "y": -120 },
+    { "id": "lambda-ingesta", "label": "Lambda Ingesta", "sub": "lambda_ext", "type": "function", "icon": "aws/lambda", "group": "capa-ingesta", "x": 50, "y": 0 },
+    { "id": "s3-bronze", "label": "S3 Bronze", "sub": "stbronze (JSON Crudo)", "type": "storage", "icon": "aws/s3", "group": "s3-lake", "layer": "bronze", "x": 50, "y": 150 },
+    { "id": "lambda-limpieza", "label": "Lambda Limpieza", "sub": "Transformación Parquet", "type": "function", "icon": "aws/lambda", "group": "capa-proc", "x": 50, "y": 300 },
+    { "id": "s3-silver", "label": "S3 Silver", "sub": "23silver (Parquet)", "type": "storage", "icon": "aws/s3", "group": "capa-proc", "layer": "silver", "x": 300, "y": 380 },
+    { "id": "athena", "label": "Amazon Athena", "sub": "athena: Consultas SQL", "type": "analytics", "icon": "aws/athena", "group": "capa-ana", "x": 50, "y": 520 },
+    { "id": "s3-gold", "label": "S3 Gold", "sub": "s3_gold -3gold (KPIs)", "type": "storage", "icon": "aws/s3", "group": "capa-ana", "layer": "gold", "x": 300, "y": 520 },
+    { "id": "usuarios", "label": "Cuerpo Técnico y Analistas", "sub": "(analyst)", "type": "user", "x": -450, "y": 520 }
   ],
   "edges": [
-    { "id": "e1", "from": "cron_daily", "to": "lambda_ext" },
-    { "id": "e2", "from": "api_key", "to": "lambda_ext" },
-    { "id": "e3", "from": "api-ext", "to": "lambda_ext" },
-    { "id": "e4", "from": "lambda_ext", "to": "s3_bronze" },
-    { "id": "e5", "from": "s3_bronze", "to": "lambda_trans" },
-    { "id": "e6", "from": "lambda_trans", "to": "s3_silver" },
-    { "id": "e7", "from": "s3_silver", "to": "analytics_db" },
-    { "id": "e8", "from": "analytics_db", "to": "s3_gold" },
-    { "id": "e9", "from": "usuarios", "to": "analytics_db" }
+    { "id": "e1", "from": "cron", "to": "lambda-ingesta", "label": "1. Trigger" },
+    { "id": "e2", "from": "ssm", "to": "lambda-ingesta", "label": "2. Lectura credencial" },
+    { "id": "e3", "from": "api-ext", "to": "lambda-ingesta", "label": "3. Petición HTTP" },
+    { "id": "e4", "from": "lambda-ingesta", "to": "s3-bronze", "label": "4. Ingesta JSON crudo" },
+    { "id": "e5", "from": "s3-bronze", "to": "lambda-limpieza", "label": "5. Trigger transformación" },
+    { "id": "e6", "from": "lambda-limpieza", "to": "s3-silver", "label": "6. Escritura Parquet (Idempotente)" },
+    { "id": "e7", "from": "s3-silver", "to": "athena", "label": "7. Escaneo Parquet" },
+    { "id": "e8", "from": "athena", "to": "s3-gold", "label": "8. Guardado de KPIs" },
+    { "id": "e9", "from": "usuarios", "to": "athena", "label": "9. Consultas analíticas" }
   ]
 }
