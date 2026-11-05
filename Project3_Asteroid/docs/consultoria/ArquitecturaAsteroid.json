@@ -1,86 +1,34 @@
 {
-  "project": {
-    "title": "Asteroid Data Engineering Project",
-    "version": "1.0",
-    "author": "data-platform-modernization-consulting",
-    "cloud_provider": "AWS",
-    "region": "us-east-1",
-    "estimated_cost": "$0.00 MXN / Free Tier"
-  },
-  "architecture_layers": [
-    {
-      "name": "Ingesta Serverless",
-      "components": [
-        {
-          "id": "cron_nasa",
-          "name": "EventBridge Cron",
-          "service": "aws_cloudwatch_event_rule",
-          "description": "Trigger diario (00:00 UTC)"
-        },
-        {
-          "id": "lambda_nasa_ext",
-          "name": "Lambda Extracción NASA",
-          "service": "aws_lambda_function",
-          "description": "Consume API NeoWS de NASA"
-        }
-      ]
-    },
-    {
-      "name": "Data Lake (Medallion)",
-      "components": [
-        {
-          "id": "s3_bronze",
-          "name": "S3 Bronze",
-          "service": "aws_s3_bucket",
-          "description": "Payload JSON crudo de objetos cercanos a la tierra"
-        },
-        {
-          "id": "s3_silver",
-          "name": "S3 Silver",
-          "service": "aws_s3_bucket",
-          "description": "Parquet limpio, tipado y estandarizado"
-        },
-        {
-          "id": "s3_gold",
-          "name": "S3 Gold",
-          "service": "aws_s3_bucket",
-          "description": "Métricas de riesgo, peligro y probabilidad de impacto"
-        }
-      ]
-    },
-    {
-      "name": "Procesamiento y Analítica",
-      "components": [
-        {
-          "id": "lambda_clean_silver",
-          "name": "Lambda Limpieza & Parquet",
-          "service": "aws_lambda_function",
-          "description": "Reemplaza Glue Job para conversión Bronze a Silver"
-        },
-        {
-          "id": "lambda_metrics_gold",
-          "name": "Lambda KPIs Riesgo",
-          "service": "aws_lambda_function",
-          "description": "Reemplaza Glue Job para modelado Silver a Gold"
-        },
-        {
-          "id": "asteroid_db",
-          "name": "Amazon Athena",
-          "service": "aws_athena_database",
-          "description": "Consultas SQL sobre datos refinados"
-        }
-      ]
-    }
+  "formatVersion": 1,
+  "title": "Asteroid Data Engineering Project",
+  "routing": "elbow",
+  "groups": [
+    { "id": "grupo-ingesta", "label": "Ingesta Serverless", "color": "coral", "region": "AWS" },
+    { "id": "grupo-lake", "label": "Data Lake (Medallion)", "color": "limon" },
+    { "id": "grupo-analitica", "label": "Procesamiento y Analítica", "color": "menta" }
   ],
-  "data_pipeline_flow": [
-    { "step": 1, "from": "NASA NeoWS API (External)", "to": "lambda_nasa_ext", "action": "Petición HTTP vía Cron" },
-    { "step": 2, "from": "lambda_nasa_ext", "to": "s3_bronze", "action": "Ingesta JSON crudo" },
-    { "step": 3, "from": "s3_bronze", "to": "lambda_clean_silver", "action": "Trigger transformación" },
-    { "step": 4, "from": "lambda_clean_silver", "to": "s3_silver", "action": "Escritura Parquet refinado" },
-    { "step": 5, "from": "s3_silver", "to": "lambda_metrics_gold", "action": "Clasificación de riesgo" },
-    { "step": 6, "from": "lambda_metrics_gold", "to": "s3_gold", "action": "Guardado de métricas" },
-    { "step": 7, "from": "s3_silver / s3_gold", "to": "asteroid_db", "action": "Escaneo de datos" },
-    { "step": 8, "from": "Cuerpo Técnico", "to": "asteroid_db", "action": "Consultas SQL" },
-    { "step": 9, "from": "Dashboard (Tableau)", "to": "asteroid_db", "action": "Visualización de resultados" }
+  "nodes": [
+    { "id": "api-ext", "label": "NASA NeoWS API", "type": "external", "x": -300, "y": 0 },
+    { "id": "cron_nasa", "label": "EventBridge Cron", "type": "events", "icon": "aws/eventbridge", "sub": "00:00 UTC", "group": "grupo-ingesta", "x": -50, "y": -120 },
+    { "id": "lambda_nasa_ext", "label": "Lambda Extracción", "type": "function", "icon": "aws/lambda", "group": "grupo-ingesta", "x": 0, "y": 0 },
+    { "id": "s3_bronze", "label": "S3 Bronze", "type": "storage", "icon": "aws/s3", "layer": "bronze", "group": "grupo-lake", "x": 250, "y": 0 },
+    { "id": "lambda_clean_silver", "label": "Lambda Limpieza & Parquet", "type": "function", "icon": "aws/lambda", "group": "grupo-analitica", "x": 500, "y": 0 },
+    { "id": "s3_silver", "label": "S3 Silver", "type": "storage", "icon": "aws/s3", "layer": "silver", "group": "grupo-lake", "x": 750, "y": 0 },
+    { "id": "lambda_metrics_gold", "label": "Lambda KPIs Riesgo", "type": "function", "icon": "aws/lambda", "group": "grupo-analitica", "x": 1000, "y": 0 },
+    { "id": "s3_gold", "label": "S3 Gold", "type": "storage", "icon": "aws/s3", "layer": "gold", "group": "grupo-lake", "x": 1250, "y": 0 },
+    { "id": "asteroid_db", "label": "Amazon Athena", "type": "analytics", "icon": "aws/athena", "group": "grupo-analitica", "x": 1000, "y": 200 },
+    { "id": "usuarios", "label": "Dashboard / Tableau", "type": "user", "sub": "Consultas y visualización", "x": 1250, "y": 200 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "cron_nasa", "to": "lambda_nasa_ext" },
+    { "id": "e2", "from": "api-ext", "to": "lambda_nasa_ext" },
+    { "id": "e3", "from": "lambda_nasa_ext", "to": "s3_bronze" },
+    { "id": "e4", "from": "s3_bronze", "to": "lambda_clean_silver" },
+    { "id": "e5", "from": "lambda_clean_silver", "to": "s3_silver" },
+    { "id": "e6", "from": "s3_silver", "to": "lambda_metrics_gold" },
+    { "id": "e7", "from": "lambda_metrics_gold", "to": "s3_gold" },
+    { "id": "e8", "from": "s3_silver", "to": "asteroid_db" },
+    { "id": "e9", "from": "s3_gold", "to": "asteroid_db" },
+    { "id": "e10", "from": "usuarios", "to": "asteroid_db" }
   ]
 }
