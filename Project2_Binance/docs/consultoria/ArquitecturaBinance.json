@@ -1,35 +1,41 @@
 {
   "formatVersion": 1,
-  "title": "Binance Data Engineering Project",
+  "title": "Binance Data Engineering Project - Proposed Architecture",
   "routing": "elbow",
   "groups": [
-    { "id": "grupo-ingesta", "label": "Ingesta Serverless", "color": "coral", "region": "AWS" },
-    { "id": "grupo-lake", "label": "Data Lake (Medallion)", "color": "limon" },
-    { "id": "grupo-procesamiento", "label": "Procesamiento y Estrategia Trading", "color": "menta" }
+    { "id": "aws-cloud", "label": "AWS Cloud (us-east-1) - Free Tier · $0/mo", "icon": "aws/group-cloud", "color": "coral", "region": "us-east-1" },
+    { "id": "medallion-lake", "label": "Amazon S3 Data Lake (Medallion)", "color": "menta", "parent": "aws-cloud" }
   ],
   "nodes": [
-    { "id": "api-ext", "label": "Binance API", "type": "external", "x": -450, "y": 0 },
-    { "id": "cron_binance", "label": "EventBridge Cron", "type": "events", "icon": "aws/eventbridge", "sub": "00:05 UTC", "group": "grupo-ingesta", "x": -200, "y": -120 },
-    { "id": "binance_api_key", "label": "SSM Parameter Store", "type": "storage", "sub": "Credencial API", "group": "grupo-ingesta", "x": -200, "y": 120 },
-    { "id": "lambda_binance_ext", "label": "Lambda Extracción Binance", "type": "function", "icon": "aws/lambda", "group": "grupo-ingesta", "x": 0, "y": 0 },
-    { "id": "s3_bronze", "label": "S3 Bronze", "type": "storage", "icon": "aws/s3", "layer": "bronze", "group": "grupo-lake", "x": 250, "y": 0 },
-    { "id": "lambda_clean_silver", "label": "Lambda Limpieza & Parquet", "type": "function", "icon": "aws/lambda", "group": "grupo-procesamiento", "x": 500, "y": 0 },
-    { "id": "s3_silver", "label": "S3 Silver", "type": "storage", "icon": "aws/s3", "layer": "silver", "group": "grupo-lake", "x": 750, "y": 0 },
-    { "id": "lambda_trading_strategy", "label": "Lambda Estrategia", "type": "function", "icon": "aws/lambda", "group": "grupo-procesamiento", "x": 1000, "y": 0 },
-    { "id": "s3_gold", "label": "S3 Gold", "type": "storage", "icon": "aws/s3", "layer": "gold", "group": "grupo-lake", "x": 1250, "y": 0 },
-    { "id": "binance_db", "label": "Amazon Athena", "type": "analytics", "icon": "aws/athena", "group": "grupo-procesamiento", "x": 1250, "y": 200 },
-    { "id": "usuarios", "label": "Analistas / Tableau", "type": "user", "sub": "Consultas visuales", "x": 1500, "y": 200 }
+    { "id": "api-ext", "label": "Binance API", "sub": "(Crypto Market Data)", "type": "external", "x": -300, "y": 150 },
+    
+    { "id": "cron", "label": "EventBridge Cron", "sub": "cron_daily / 00:05 UTC", "type": "events", "icon": "aws/eventbridge", "group": "aws-cloud", "x": 0, "y": 0 },
+    { "id": "ssm", "label": "SSM Parameter Store", "sub": "API Key", "type": "storage", "group": "aws-cloud", "x": 300, "y": 0 },
+    { "id": "lambda-ext", "label": "AWS Lambda Extracción Cripto", "sub": "lambda_ext", "type": "function", "icon": "aws/lambda", "group": "aws-cloud", "x": 0, "y": 150 },
+    
+    { "id": "s3-bronze", "label": "S3 Bronze", "sub": "(Raw CSV)", "type": "storage", "icon": "aws/s3", "group": "medallion-lake", "layer": "bronze", "x": 350, "y": 150 },
+    { "id": "lambda-trans", "label": "AWS Lambda", "sub": "lambda_trans / Limpieza Parquet & Idempotencia", "type": "function", "icon": "aws/lambda", "group": "medallion-lake", "x": 650, "y": 150 },
+    { "id": "s3-silver", "label": "S3 Silver", "sub": "s3_silver - Parquet Refinado", "type": "storage", "icon": "aws/s3", "group": "medallion-lake", "layer": "silver", "x": 650, "y": 300 },
+    { "id": "lambda-metrics", "label": "AWS Lambda", "sub": "lambda_metrics / Estrategia Trading RSI / Bollinger / MACD", "type": "function", "icon": "aws/lambda", "group": "medallion-lake", "x": 650, "y": 450 },
+    { "id": "s3-gold", "label": "S3 Gold", "sub": "s3_gold / Señales de Trading", "type": "storage", "icon": "aws/s3", "group": "medallion-lake", "layer": "gold", "x": 650, "y": 600 },
+    
+    { "id": "athena", "label": "Amazon Athena", "sub": "athena - Consultas SQL", "type": "analytics", "icon": "aws/athena", "group": "aws-cloud", "x": 950, "y": 450 },
+    
+    { "id": "usuarios", "label": "Cuerpo Técnico y Analistas", "sub": "(analyst)", "type": "user", "x": 1300, "y": 400 },
+    { "id": "dashboard", "label": "Dashboard de Visualización", "sub": "(Tableau)", "type": "monitor", "x": 1300, "y": 550 }
   ],
   "edges": [
-    { "id": "e1", "from": "cron_binance", "to": "lambda_binance_ext" },
-    { "id": "e2", "from": "binance_api_key", "to": "lambda_binance_ext" },
-    { "id": "e3", "from": "api-ext", "to": "lambda_binance_ext" },
-    { "id": "e4", "from": "lambda_binance_ext", "to": "s3_bronze" },
-    { "id": "e5", "from": "s3_bronze", "to": "lambda_clean_silver" },
-    { "id": "e6", "from": "lambda_clean_silver", "to": "s3_silver" },
-    { "id": "e7", "from": "s3_silver", "to": "lambda_trading_strategy" },
-    { "id": "e8", "from": "lambda_trading_strategy", "to": "s3_gold" },
-    { "id": "e9", "from": "s3_gold", "to": "binance_db" },
-    { "id": "e10", "from": "usuarios", "to": "binance_db" }
+    { "id": "e1", "from": "cron", "to": "lambda-ext", "label": "cron_daily" },
+    { "id": "e2", "from": "ssm", "to": "lambda-ext", "label": "2. Lecture credenciaot" },
+    { "id": "e3", "from": "api-ext", "to": "lambda-ext" },
+    { "id": "e4", "from": "lambda-ext", "to": "s3-bronze", "label": "1. Ingesta CSV" },
+    { "id": "e5", "from": "s3-bronze", "to": "lambda-trans", "label": "2. Trigger Transformación" },
+    { "id": "e6", "from": "lambda-trans", "to": "s3-silver", "label": "3. Escritura Parquet (Idempotente)" },
+    { "id": "e7", "from": "s3-silver", "to": "lambda-metrics", "label": "4. Análisis Técnico" },
+    { "id": "e8", "from": "lambda-metrics", "to": "s3-gold", "label": "5. Guardado de Señales" },
+    { "id": "e9", "from": "s3-silver", "to": "athena", "label": "6. Escaneo Parquet" },
+    { "id": "e10", "from": "s3-gold", "to": "athena", "label": "7. Lectura Señales" },
+    { "id": "e11", "from": "usuarios", "to": "athena", "label": "8. Consultas analíticas" },
+    { "id": "e12", "from": "dashboard", "to": "athena", "label": "9. Visualización de resultados" }
   ]
 }
