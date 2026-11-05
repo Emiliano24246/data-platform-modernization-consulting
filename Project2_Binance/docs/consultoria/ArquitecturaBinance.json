@@ -1,0 +1,93 @@
+{
+  "project": {
+    "title": "Binance Data Engineering Project",
+    "version": "1.0",
+    "author": "data-platform-modernization-consulting",
+    "cloud_provider": "AWS",
+    "region": "us-east-1",
+    "estimated_cost": "$0.00 MXN / Free Tier"
+  },
+  "architecture_layers": [
+    {
+      "name": "Ingesta Serverless",
+      "components": [
+        {
+          "id": "cron_binance",
+          "name": "EventBridge Cron",
+          "service": "aws_cloudwatch_event_rule",
+          "description": "Trigger diario a las 00:05 UTC (18:05 CDMX)"
+        },
+        {
+          "id": "binance_api_key",
+          "name": "SSM Parameter Store",
+          "service": "aws_ssm_parameter",
+          "description": "Credencial cifrada de API de Binance"
+        },
+        {
+          "id": "lambda_binance_ext",
+          "name": "Lambda Extracción Binance",
+          "service": "aws_lambda_function",
+          "description": "Obtiene precio de cierre diario de velas cripto"
+        }
+      ]
+    },
+    {
+      "name": "Data Lake (Medallion)",
+      "components": [
+        {
+          "id": "s3_bronze",
+          "name": "S3 Bronze",
+          "service": "aws_s3_bucket",
+          "description": "CSV crudo con precios de mercado cripto"
+        },
+        {
+          "id": "s3_silver",
+          "name": "S3 Silver",
+          "service": "aws_s3_bucket",
+          "description": "Parquet limpio, sin duplicados y timestamps estandarizados"
+        },
+        {
+          "id": "s3_gold",
+          "name": "S3 Gold",
+          "service": "aws_s3_bucket",
+          "description": "Señales de Trading consolidadas (STRONG BUY, SELL, HOLD)"
+        }
+      ]
+    },
+    {
+      "name": "Procesamiento y Estrategia Trading",
+      "components": [
+        {
+          "id": "lambda_clean_silver",
+          "name": "Lambda Limpieza & Parquet",
+          "service": "aws_lambda_function",
+          "description": "Conversión CSV a Parquet sin depender de Glue"
+        },
+        {
+          "id": "lambda_trading_strategy",
+          "name": "Lambda Estrategia Triple Confirma",
+          "service": "aws_lambda_function",
+          "description": "Cálculo vectorizado de RSI(14), Bollinger(20,2) y MACD(12,26,9)"
+        },
+        {
+          "id": "binance_db",
+          "name": "Amazon Athena",
+          "service": "aws_athena_database",
+          "description": "Consultas analíticas sobre señales de mercado"
+        }
+      ]
+    }
+  ],
+  "data_pipeline_flow": [
+    { "step": 1, "from": "cron_binance", "to": "lambda_binance_ext", "action": "Trigger (00:05 UTC)" },
+    { "step": 2, "from": "binance_api_key", "to": "lambda_binance_ext", "action": "Lectura credencial" },
+    { "step": 3, "from": "Binance API (External)", "to": "lambda_binance_ext", "action": "Petición HTTP" },
+    { "step": 4, "from": "lambda_binance_ext", "to": "s3_bronze", "action": "Ingesta CSV crudo" },
+    { "step": 5, "from": "s3_bronze", "to": "lambda_clean_silver", "action": "Trigger transformación" },
+    { "step": 6, "from": "lambda_clean_silver", "to": "s3_silver", "action": "Escritura Parquet (Idempotente)" },
+    { "step": 7, "from": "s3_silver", "to": "lambda_trading_strategy", "action": "Análisis técnico (RSI, Bollinger, MACD)" },
+    { "step": 8, "from": "lambda_trading_strategy", "to": "s3_gold", "action": "Guardado de señales de trading" },
+    { "step": 9, "from": "s3_gold", "to": "binance_db", "action": "Escaneo de señales" },
+    { "step": 10, "from": "Analistas Trading / Tableau", "to": "binance_db", "action": "Consultas analíticas y visualización" }
+  ]
+}

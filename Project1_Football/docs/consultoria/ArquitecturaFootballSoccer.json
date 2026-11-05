@@ -1,0 +1,86 @@
+{
+  "project": {
+    "title": "Football Soccer Data Engineering Project",
+    "version": "1.0",
+    "author": "data-platform-modernization-consulting",
+    "cloud_provider": "AWS",
+    "region": "us-east-1",
+    "estimated_cost": "$0.00 MXN / Free Tier"
+  },
+  "architecture_layers": [
+    {
+      "name": "Ingesta Serverless",
+      "components": [
+        {
+          "id": "cron_daily",
+          "name": "EventBridge Cron",
+          "service": "aws_cloudwatch_event_rule",
+          "description": "Trigger diario desatendido (00:05 UTC)"
+        },
+        {
+          "id": "api_key",
+          "name": "SSM Parameter Store",
+          "service": "aws_ssm_parameter",
+          "description": "API Key cifrada con KMS"
+        },
+        {
+          "id": "lambda_ext",
+          "name": "Lambda Extracción",
+          "service": "aws_lambda_function",
+          "description": "Consume API-Football y resguarda datos"
+        }
+      ]
+    },
+    {
+      "name": "Data Lake (Medallion)",
+      "components": [
+        {
+          "id": "s3_bronze",
+          "name": "S3 Bronze",
+          "service": "aws_s3_bucket",
+          "description": "Raw JSON intacto de la API"
+        },
+        {
+          "id": "s3_silver",
+          "name": "S3 Silver",
+          "service": "aws_s3_bucket",
+          "description": "Parquet limpio particionado por temporada={año}"
+        },
+        {
+          "id": "s3_gold",
+          "name": "S3 Gold",
+          "service": "aws_s3_bucket",
+          "description": "Resultados de vistas precalculadas de efectividad y goles"
+        }
+      ]
+    },
+    {
+      "name": "Procesamiento y Analítica",
+      "components": [
+        {
+          "id": "lambda_trans",
+          "name": "Lambda Limpieza",
+          "service": "aws_lambda_function",
+          "description": "Transformación JSON a Parquet idempotente"
+        },
+        {
+          "id": "analytics_db",
+          "name": "Amazon Athena",
+          "service": "aws_athena_database",
+          "description": "Motor SQL Serverless"
+        }
+      ]
+    }
+  ],
+  "data_pipeline_flow": [
+    { "step": 1, "from": "cron_daily", "to": "lambda_ext", "action": "Trigger (00:05 UTC)" },
+    { "step": 2, "from": "api_key", "to": "lambda_ext", "action": "Lectura credencial" },
+    { "step": 3, "from": "API-Football (External)", "to": "lambda_ext", "action": "Petición HTTP" },
+    { "step": 4, "from": "lambda_ext", "to": "s3_bronze", "action": "Ingesta JSON crudo" },
+    { "step": 5, "from": "s3_bronze", "to": "lambda_trans", "action": "Trigger transformación" },
+    { "step": 6, "from": "lambda_trans", "to": "s3_silver", "action": "Escritura Parquet (Idempotente)" },
+    { "step": 7, "from": "s3_silver", "to": "analytics_db", "action": "Escaneo Parquet" },
+    { "step": 8, "from": "analytics_db", "to": "s3_gold", "action": "Guardado de KPIs" },
+    { "step": 9, "from": "Cuerpo Técnico / Analistas", "to": "analytics_db", "action": "Consultas analíticas" }
+  ]
+}
