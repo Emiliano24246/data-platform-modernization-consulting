@@ -79,8 +79,6 @@ Transversal: IAM de mínimo privilegio · CloudWatch (alertas) · Parameter Stor
 
 ## Equipo
 
-Equipo 3, Temas Selectos de Ingeniería, Facultad de Ingeniería, UNAM.
-
 | Nombre | Rol |
 |---|---|
 | Tristán Qesen Sánchez Mayen | Lead Data Engineer |
