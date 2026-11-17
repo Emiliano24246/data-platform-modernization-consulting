@@ -71,7 +71,7 @@ binance/
     ├── rfp.md                         # Requerimiento formal del cliente (RFP)
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
     ├── adr/
-    │   └── 0001-lambda-vs-glue.md     # Registro de decision de arquitectura
+    │   └── ADR-01-Lambda_vs_Glue.md  # Registro de decision de arquitectura
     ├── ArquitecturaBinance.jpg       # Diagrama de arquitectura Binance (jpg)
     └── ArquitecturaBinance.json      # Diagrama de arquitectura Binance (json)
 ```
@@ -94,7 +94,7 @@ La clasificacion de senales de mercado se evalua de acuerdo a la siguiente matri
 
 Las decisiones tecnicas y justificaciones cuantitativas de diseno para este proyecto se documentan formalmente mediante registros de decision de arquitectura:
 
-- [ADR 0001: Seleccion de AWS Lambda frente a AWS Glue para la transformacion Bronze a Silver](docs/adr/0001-lambda-vs-glue.md)
+- [ADR 0001: Seleccion de AWS Lambda frente a AWS Glue para la transformacion Bronze a Silver](docs/adr/ADR-01-Lambda_vs_Glue.md)
 
 ---
 

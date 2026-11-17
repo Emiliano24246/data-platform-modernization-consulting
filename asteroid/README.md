@@ -59,7 +59,7 @@ asteroid/
     ├── rfp.md                         # Requerimiento formal del cliente (RFP)
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
     ├── adr/
-    │   └── 0001-lambda-vs-glue-batch-processing.md # Registro de decision de arquitectura
+    │   └── ADR-01-Lambda_vs_Glue.md   # Registro de decision de arquitectura
     ├── ArquitecturaAsteroid.jpg       # Diagrama de arquitectura Asteroid (jpg)
     └── ArquitecturaAsteroid.json      # Diagrama de arquitectura Asteroid (json)
 ```
@@ -70,7 +70,7 @@ asteroid/
 
 Las decisiones tecnicas y justificaciones cuantitativas de diseno para este proyecto se documentan formalmente mediante registros de decision de arquitectura:
 
-- [ADR 0001: Seleccion de AWS Lambda frente a AWS Glue y herramientas de streaming para el procesamiento diario de NEOs](docs/adr/0001-lambda-vs-glue-batch-processing.md)
+- [ADR 01: Seleccion de AWS Lambda frente a AWS Glue y herramientas de streaming para el procesamiento diario de NEOs](docs/adr/ADR-01-Lambda_vs_Glue.md)
 
 ---
 
