@@ -1,6 +1,6 @@
 # Data Platform Modernization Consulting
 
-Portafolio de consultoría en ingeniería de datos sobre AWS. El repositorio reúne tres proyectos de clientes ficticios, cada uno con su **RFP** (lo que pide el cliente) y su **SOW** (lo que la consultora se compromete a entregar). Todos modernizan un flujo de datos existente hacia una arquitectura **por lotes (batch), sin servidor y con servicios básicos de AWS**, pensada para caber en la capa gratuita o costar centavos.
+Portafolio de consultoría en ingeniería de datos sobre AWS. El repositorio reúne los proyectos de clientes, cada uno con su **RFP** y su **SOW**. Todos estan enfocados en modernizar los flujos de datos existentes hacia una arquitectura **por lotes (batch), sin servidor y con servicios básicos de AWS**, pensada para optimizar los costos y el rendimiento del sistema.
 
 ## Objetivo
 
@@ -13,11 +13,11 @@ Mostrar cómo se diagnostica un sistema de datos existente y se convierte en una
 
 ## Proyectos
 
-| Proyecto | Cliente (ficticio) | Fuente de datos | Problema | Documentos |
+| Proyecto | Cliente | Fuente de datos | Problema | Documentos |
 |---|---|---|---|---|
-| **Football** | Dirección de Selecciones Nacionales | API-Football | Extracción en una instancia EC2 siempre encendida y consultas lentas por particionar solo por año | [RFP](football/docs/consultoria/rfp.md) · [SOW](football/docs/consultoria/sow.md) |
-| **Binance** | MarketMatrix (fondo cuantitativo) | Klines de Binance | Pipeline inestable de velas e indicadores (RSI, Bollinger, MACD) | [RFP](binance/docs/consultoria/rfp.md) · [SOW](binance/docs/consultoria/sow.md) |
-| **Asteroid** | Dirección General de Exposiciones (museos) | API NeoWs de la NASA | Procesamiento manual de un JSON de más de 300 campos y pantallas con datos desactualizados | [RFP](asteroid/docs/consultoria/rfp.md) · [SOW](asteroid/docs/consultoria/sow.md) |
+| **Football** | Dirección de Selecciones Nacionales | API-Football | Extracción en una instancia EC2 siempre encendida y consultas lentas por particionar solo por año | [RFP](football/docs/rfp.md) · [SOW](football/docs/sow.md) |
+| **Binance** | MarketMatrix (fondo cuantitativo) | Klines de Binance | Pipeline inestable de velas e indicadores (RSI, Bollinger, MACD) | [RFP](binance/docs/rfp.md) · [SOW](binance/docs/sow.md) |
+| **Asteroid** | Dirección General de Exposiciones (museos) | API NeoWs de la NASA | Procesamiento manual de un JSON de más de 300 campos y pantallas con datos desactualizados | [RFP](asteroid/docs/rfp.md) · [SOW](asteroid/docs/sow.md) |
 
 ## Arquitectura de referencia
 
@@ -68,18 +68,7 @@ Transversal: IAM de mínimo privilegio · CloudWatch (alertas) · Parameter Stor
 | AWS CloudFormation | Infraestructura como código |
 
 
-## Estado del proyecto
-
-- [x] RFP de los tres proyectos, escritos desde la voz del cliente
-- [x] Estructura del repositorio y README
-- [ ] SOW corregidos con diagnóstico, horas y costo AWS consistentes
-- [ ] Estimación de costos con la calculadora de AWS
-- [ ] Plantillas de CloudFormation
-- [ ] Implementación y pruebas
-
-## Equipo
-
-Equipo 3, Temas Selectos de Ingeniería, Facultad de Ingeniería, UNAM.
+## Equipo de Consultoría
 
 | Nombre | Rol |
 |---|---|
@@ -89,9 +78,6 @@ Equipo 3, Temas Selectos de Ingeniería, Facultad de Ingeniería, UNAM.
 | Angel Hazel Tapia Ledesma| Data Engineer |
 | Caballero García Yessica Lizeth| Data Engineer |
 
-## Propósito profesional
-
-El repositorio aplica conceptos reales de ingeniería de datos: arquitecturas de Data Lake, ETL por lotes, calidad de datos, infraestructura como código y estimación de costos en la nube. Las propuestas simulan el trabajo de una consultora con clientes pequeños, donde diseñar con pocos recursos es parte del valor.
 
 ## Convenciones
 - Cada proyecto vive en su carpeta y siempre tiene `rfp.md` y `sow.md`.
