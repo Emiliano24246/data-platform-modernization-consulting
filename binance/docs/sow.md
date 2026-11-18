@@ -12,7 +12,7 @@
 - Yessica Lizeth Caballero Garcia - Data Engineer
 
 ## 1. Resumen ejecutivo
-Entendimos que la extracción diaria de Binance es inestable, la limpieza depende de pasos manuales y las señales carecen de validación de exactitud. Entregaremos un pipeline serverless por lotes (diario) que extrae klines, valida completitud, calcula RSI, Bollinger y MACD con tolerancia de 0.000001 frente a su línea base y publica las señales en Athena. La solución incluye plantillas CloudFormation, alertas CloudWatch/SNS, pruebas de regresión y AWS Budget. Se entregará en 10 semanas por un monto total de $110,000 MXN, garantizando un costo operativo mensual en AWS de $0.00 MXN.
+Entendimos que la extracción diaria de Binance es inestable, la limpieza depende de pasos manuales y las señales carecen de validación de exactitud. Entregaremos un pipeline serverless por lotes (diario) que extrae klines, valida completitud, calcula RSI, Bollinger y MACD con objetivo de tolerancia absoluta de 0.000001 frente a la línea base que entregue el cliente y publica las señales en Athena. La solución incluye plantillas CloudFormation, alertas CloudWatch/SNS, pruebas de regresión y AWS Budget. Se entregará en 10 semanas por un monto total de $110,000 MXN. Los costos de AWS dependen del uso y se monitorean mediante Budget; no se garantiza costo cero.
 
 ## 2. Diagnóstico
 A partir de la revisión técnica del entorno actual, identificamos los siguientes hallazgos:
@@ -22,13 +22,13 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 3. **Uso de Glue con PySpark para volumen pequeño:** Se planteaba Glue/Spark para procesar una sola vela diaria por par. **Riesgo:** Sobrecostos innecesarios por tiempo de aprovisionamiento de nodos. **Solución:** Refactorización a Python con pandas nativo en AWS Lambda (Entregables E1, E2 y E3).
 4. **Cálculos en vistas SQL no documentadas sin pruebas de regresión:** Los indicadores se calculan al vuelo en vistas de Athena sin tolerancia matemática verificada. **Riesgo:** Inconsistencia en las señales emitidas e imposibilidad de auditoría. **Solución:** Indicadores calculados en Python con tolerancia absoluta ≤ 0.000001 frente a los 90 días de línea base entregados por el cliente (Entregables E3 y E4).
 5. **Falta de monitoreo y notificaciones de falla:** Las interrupciones del pipeline no emiten avisos oportunos. **Riesgo:** Detección tardía de fallos operacionales. **Solución:** Alarmas de CloudWatch integradas con SNS para alertas automáticas por correo (Entregable E1)
-6. **Políticas IAM y permisos por revisar:** No se aplica el principio de mínimo privilegio ni aislamiento estricto. **Riesgo:** Exposición no autorizada de datos de mercado. **Solución:** Un bucket S3 por capa, permisos IAM de mínimo privilegio y rol de solo lectura para la mesa de control (Entregable E5).
+6. **Políticas IAM y permisos por revisar:** No se aplica el principio de mínimo privilegio ni aislamiento estricto. **Riesgo:** Exposición no autorizada de datos de mercado. **Solución:** Un bucket S3 con prefijos aislados por capa, permisos IAM de mínimo privilegio y rol de solo lectura para la mesa de control (Entregable E5).
 
 ## 3. Alcance
 **Dentro de alcance:**
 - Diagnóstico del pipeline actual con evidencia técnica de hallazgos.
 - Extracción diaria automatizada de la vela de 1 día para BTCUSDT desde la API pública de Binance a las 00:05 UTC.
-- Organización en Amazon S3 en tres capas aisladas: Bronze (crudo), Silver (Parquet limpio con indicadores) y Gold (tabla de señales).
+- Organización en un bucket Amazon S3 con prefijos aislados: Bronze (crudo), Silver (Parquet limpio con indicadores), cuarentena, Gold y resultados de Athena.
 - Verificación de completitud y calidad de datos, con cargas idempotentes y repetibles sin duplicados.
 - Cálculo determinista en Python de RSI, Bandas de Bollinger y MACD, con suite de pruebas de regresión automáticas contra la línea base del cliente.
 - Tabla de señales (COMPRA FUERTE, VENTA, MANTENER) en Athena generada mediante CTAS.
@@ -61,7 +61,7 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 | N4 | E4 | Cubierta |
 
 ## 6. Enfoque técnico (alto nivel)
-Desplegaremos una arquitectura serverless por lotes utilizando CloudFormation. EventBridge ejecutará diariamente a las 00:05 UTC una función Lambda que extraerá la vela de Binance y la depositará intacta en `s3://marketmatrix-bronze/`. Una segunda función Lambda verificará la completitud del dato, limpiará estructuras y calculará RSI, Bollinger y MACD en Python de 64 bits, guardando el resultado en `s3://marketmatrix-silver/` en formato Parquet con sobrescritura determinista por fecha para asegurar idempotencia. Una tercera Lambda ejecutará una consulta CTAS en Athena para regenerar la tabla Gold en `s3://marketmatrix-gold/` con la regla de triple confirmación. El monitoreo se gestionará mediante alarmas CloudWatch conectadas a SNS y un AWS Budget con alertas de gasto.
+Desplegaremos una arquitectura serverless por lotes utilizando CloudFormation. EventBridge ejecutará diariamente a las 00:05 UTC una Lambda que extraerá la vela diaria cerrada de Binance y depositará el JSON crudo en `s3://binance-data-lake-<entorno>-<cuenta>/bronze/`. Una segunda Lambda, disparada por eventos S3 de Bronze, validará la vela; los datos inválidos se guardarán en `cuarentena/` y la ejecución fallará, y los datos válidos se transformarán a Parquet en `silver/`. Silver lee Bronze ordenado como fuente de verdad para que el resultado no dependa del orden de llegada de las notificaciones. Una vez terminada cada carga, publica un marcador en `control/gold-ready/`; ese marcador activa la tercera Lambda, que ejecuta una consulta CTAS de Athena y materializa las señales en `gold/`. Los resultados temporales de Athena quedan aislados en `athena-results/`. Un único bucket contiene los prefijos de las capas. Para una carga histórica, Silver acepta `{"mode": "backfill"}`, recalcula todos los Parquet y emite un solo marcador Gold al final. El monitoreo se gestionará mediante alarmas CloudWatch conectadas a SNS y un AWS Budget.
 
 ## 7. Plan por hitos
 | Hito | Qué se entrega | Evidencia | Fecha | Horas |
@@ -84,6 +84,7 @@ Desplegaremos una arquitectura serverless por lotes utilizando CloudFormation. E
 ## 9. Supuestos y dependencias del cliente
 - El cliente entregará el dataset de 90 días de BTCUSDT con las klines y resultados esperados de los indicadores al cierre del Hito 0 (Semana 2).
 - El cliente entregará por escrito los periodos exactos de los indicadores (RSI, Bollinger y MACD) y las reglas de coincidencia de señales al cierre del Hito 0.
+- Hasta recibir esa definición y la línea base, el código usa como supuestos RSI con semilla SMA y suavizado Wilder, Bollinger con desviación poblacional (`ddof=0`) y MACD con EMAs iniciadas por SMA. La tolerancia E3 no se considera verificada hasta ejecutar la comparación contra los datos del cliente.
 - El cliente otorgará acceso a una cuenta de AWS con permisos para crear roles IAM y desplegar recursos vía CloudFormation.
 - La API pública de Binance es accesible desde la región de AWS seleccionada sin bloqueos de IP.
 - Los sistemas del cliente se limitan a consumir la tabla de Athena; la integración con el bot ejecutor es responsabilidad del cliente.

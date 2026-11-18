@@ -14,7 +14,7 @@
 ---
 
 ## 1. Resumen ejecutivo
-Modernizaremos la infraestructura de analítica migrando la extracción en servidores EC2 permanentes hacia una arquitectura serverless, idempotente y por capas en AWS en 10 semanas por un monto total de $110,000 MXN. Implementaremos ingesta en Amazon S3 (Bronze crudo, Silver Parquet particionado por temporada y Gold consultable vía DuckDB/Athena), automatización con CloudFormation y EventBridge, y monitoreo con alarmas en CloudWatch y un AWS Budget con alertas. La solución garantiza un costo operativo mensual en AWS de $0.00 MXN (100% de ahorro vs EC2) y permite al cuerpo técnico consultar KPIs analíticos en menos de 10 segundos.
+Modernizaremos la infraestructura de analítica migrando la extracción en servidores EC2 permanentes hacia una arquitectura serverless, idempotente y por capas en AWS en 10 semanas por $110,000 MXN de honorarios. Los cargos de AWS se estimarán y aprobarán por separado; dependen del uso y no se garantiza que sean cero. Implementaremos ingesta en un bucket S3 con prefijos Bronze, Silver, cuarentena y Gold; automatización con CloudFormation y EventBridge; y monitoreo con alarmas CloudWatch/SNS y AWS Budget. El objetivo es que el costo mensual estimado sea al menos 50 % menor que la línea base EC2 que entregue el cliente.
 
 ---
 
@@ -33,7 +33,7 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 **Dentro de alcance:**
 - Despliegue de infraestructura mediante plantillas replicables de AWS CloudFormation.
 - Ingesta serverless programada con AWS Lambda y EventBridge para consumir API-Football sin servidores fijos.
-- Almacenamiento organizado en Amazon S3 bajo arquitectura de tres capas: Bronze (JSON crudo), Silver (Parquet limpio y particionado por `temporada`) y Gold (vistas de KPIs).
+- Almacenamiento en un bucket Amazon S3 con prefijos aislados por permisos: Bronze (JSON crudo), Silver (Parquet particionado por `season`), cuarentena, Gold y resultados de Athena.
 - Almacenamiento seguro de credenciales de la API en AWS Systems Manager Parameter Store.
 - Tablas y Vistas analíticas en Amazon Athena para consultas SQL de efectividad y goles por equipo y partido.
 - Monitoreo de fallos con CloudWatch + SNS y creación de un AWS Budget con alertas automáticas.
@@ -52,7 +52,7 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 | **E1** | Infraestructura e Ingesta Serverless | Plantillas CloudFormation desplegadas. Función Lambda extrae el JSON de API-Football leyendo credenciales de Parameter Store vía EventBridge, sin usar instancias EC2. | 1 |
 | **E2** | Capa Cruda (Bronze) | Respuestas de API-Football guardadas en S3 Bronze en su formato JSON original e intacto para permitir re-procesamientos. | 1 |
 | **E3** | Capa Silver, Idempotencia y Alertas | Lógica Lambda que convierte JSON a Parquet particionado por `temporada`. Reejecuciones el mismo día no duplican registros. Alarma en CloudWatch notifica vía SNS si la ingesta falla. | 2 |
-| **E4** | Capa Gold (KPIs Tácticos) | Tablas y vistas en Athena para consultar efectividad y goles. La consulta de aceptación sobre una temporada completa escanea menos de 100 MB y responde en menos de 10 segundos. | 3 |
+| **E4** | Capa Gold (KPIs Tácticos) | Tabla `football_kpis_gold` y vistas `football_effectiveness` y `football_match_kpis` en Athena. La consulta de aceptación sobre una temporada completa escanea menos de 100 MB y responde en menos de 10 segundos. | 3 |
 | **E5** | FinOps, Documentación y Cierre | Entrega de estimación realizada en AWS Calculator, alerta de AWS Budget activa, reporte comparativo de ahorro de costos vs EC2 y Runbook de operación. | 4 |
 
 ---
@@ -69,7 +69,7 @@ A partir de la revisión técnica del entorno actual, identificamos los siguient
 ---
 
 ## 6. Enfoque técnico (alto nivel)
-Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un evento programado en Amazon EventBridge activará diariamente una función AWS Lambda que leerá la API Key desde Parameter Store, consumirá la API-Football y depositará la respuesta en `s3://soccer-data-lake-bronze/` en formato JSON intacto. Una segunda función Lambda procesará los JSONs, los limpiará e impondrá tipado, reescribiéndolos en `s3://soccer-data-lake-silver/` en formato Parquet aplicando sobrescritura determinista sobre la partición `temporada={año}` para asegurar idempotencia. Para la capa analítica (Gold), los analistas podrán ejecutar consultas sobre Amazon Athena o de forma gratuita sin costo de escaneo mediante DuckDB/Google Colab conectado directamente al S3. El monitoreo operativo se gestionará con alarmas CloudWatch con notificaciones vía SNS por correo y un AWS Budget con alertas automáticas de costo.
+Desplegaremos el entorno mediante CloudFormation. EventBridge activará diariamente a las 12:00 UTC una Lambda que leerá la API key `SecureString` desde Parameter Store, consultará API-Football para el día anterior y guardará la respuesta JSON intacta en `s3://football-data-lake-<entorno>-<cuenta>/bronze/`. Así se da tiempo a que finalicen los partidos antes de calcular resultados. Silver validará estructura, tipos y marcadores; conservará en Parquet los partidos todavía no disputados (goles nulos), aislará registros malformados en `cuarentena/` y escribirá los archivos válidos en `silver/season={season}/`. Un evento manual `{"mode":"backfill"}` procesa los archivos Bronze existentes y publica un solo marcador `control/gold-ready/` al finalizar. Ese marcador activa Gold, que considera únicamente estados finales `FT`, `AET` y `PEN`, crea la tabla agregada y las vistas `football_effectiveness` y `football_match_kpis` en Athena, y materializa la tabla en `gold/kpis/`. La efectividad se define provisionalmente como porcentaje de victorias y debe ser aprobada por el cliente. Alertas CloudWatch/SNS y AWS Budget monitorean la operación y el costo.
 
 ---
 
@@ -89,7 +89,7 @@ Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un even
 - **Tristan Qesen Sanchez Mayen (Lead Data Engineer):** Diseño de la arquitectura en CloudFormation, modelo de seguridad IAM, estrategia FinOps y coordinación general. Reporta a la Dirección de Selecciones Nacionales. (80 h).
 - **Darinka Sandoval Hernandez (Data Engineer):** Desarrollo de la transformación a Parquet en Capa Silver, estrategia de particionamiento por temporada e idempotencia. Reporta a Tristan. (55 h).
 - **Roman Emiliano Salgado Cruz (Data Engineer):** Desarrollo de funciones Lambda de ingesta (Capa Bronze), integración con la API-Football y automatización en EventBridge. Reporta a Tristan. (55 h).
-- **Angel Hazel Tapia Ledesma (Data Engineer):** Construcción del catálogo en AWS Glue, Vistas analíticas de KPIs en Athena/DuckDB y pruebas de rendimiento de consultas SQL. Reporta a Tristan. (55 h).
+- **Angel Hazel Tapia Ledesma (Data Engineer):** Construcción del catálogo en AWS Glue, vistas analíticas de KPIs en Athena y pruebas de rendimiento de consultas SQL. Reporta a Tristan. (55 h).
 - **Yessica Lizeth Caballero Garcia (Data Engineer):** Configuración de alertas CloudWatch/SNS, gestión de credenciales en Parameter Store y elaboración del Runbook de operación. Reporta a Tristan. (55 h).
 
 ---
@@ -97,6 +97,7 @@ Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un even
 ## 9. Supuestos y dependencias del cliente
 - El cliente entregará las credenciales activas de la API-Football y la factura actual de AWS de la instancia EC2 para establecer la línea base de costos.
 - El equipo de Inteligencia Deportiva del cliente validará las fórmulas SQL de "efectividad" durante las semanas 7 y 8.
+- La métrica provisional `effectiveness_percentage` se calcula como `wins / matches_played * 100`; los criterios de aceptación de KPIs dependen de la aprobación de la fórmula de negocio y de las tres consultas acordadas.
 - No existen otros sistemas ni procesos activos dentro de la instancia EC2 que impidan su apagado definitivo al cierre del proyecto.
 
 ---
@@ -119,8 +120,9 @@ Desplegaremos todo el entorno mediante plantillas de AWS CloudFormation. Un even
 | Data Engineer (Emiliano) | 55 | $280.00 | $15,400.00 |
 | Data Engineer (Angel Hazel) | 55 | $280.00 | $15,400.00 |
 | Colchón de imprevistos (10%) | - | - | $8,960.00 |
-| Costo estimado de AWS (Proyección 10 semanas)* | - | - | $0.00 |
-| **Total** | **300** | | **$110,000.00** |
+| Diferencia del importe fijo pendiente de desglose | - | - | $11,440.00 |
+| Cargos de AWS (estimación por AWS Calculator) | - | - | Por estimar; se aprueban y pagan por separado |
+| **Total de honorarios** | **300** | | **$110,000.00** |
 
 
 

@@ -1,0 +1,629 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  NEO Risk Monitor - Pipeline serverless por lotes (Bronze/Silver/Gold) para
+  asteroides cercanos a la Tierra (API NeoWs de la NASA). Despliega S3, 3 Lambdas,
+  EventBridge, Glue Data Catalog, SNS, alarmas de CloudWatch y AWS Budget.
+
+# =============================================================================
+#  CÓMO DESPLEGAR (consola de AWS, región us-east-1)
+# =============================================================================
+#  1. Empaqueta cada Lambda en un .zip con handler.py en la RAÍZ del zip:
+#       cd src/extract_bronze   && zip ../../extract_bronze.zip   handler.py
+#       cd ../transform_silver  && zip ../../transform_silver.zip handler.py
+#       cd ../metrics_gold      && zip ../../metrics_gold.zip     handler.py
+#  2. Crea (a mano) un bucket S3 para el código, por ejemplo
+#     "asteroid-code-<tu-cuenta>", y sube los 3 .zip dentro del prefijo
+#     "lambda/" (o el que pongas en el parámetro CodePrefix).
+#  3. Busca el ARN vigente del layer "AWSSDKPandas-Python312" (x86_64) para
+#     us-east-1 en https://aws-sdk-pandas.readthedocs.io/en/stable/layers.html
+#     (formato: arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:<N>).
+#     Crea también la API key como SecureString: Systems Manager > Parameter
+#     Store > Create parameter, nombre /asteroid/dev/nasa_api_key (o /prod/),
+#     tipo SecureString. Así el parámetro NasaApiKey queda vacío.
+#  4. CloudFormation > Create stack > Upload a template file > esta plantilla.
+#     Llena los parámetros (correo, bucket de código, layer; NasaApiKey vacío).
+#     Marca la casilla de reconocimiento de IAM (CAPABILITY_IAM).
+#  5. Revisa tu correo y CONFIRMA las suscripciones de SNS y de AWS Budgets.
+#  6. Prueba manual: Lambda > asteroid-extract-bronze-<env> > Test con
+#       {"target_date": "2026-11-17"}
+#     y revisa que aparezcan bronze/, silver/ y gold/ en el bucket.
+#  7. Athena (workgroup "primary"): base de datos asteroid_db_<env>, tabla
+#     asteroid_risk_metrics.
+#
+#  Si cambias el código, sube el .zip de nuevo y haz "Update function code"
+#  en la Lambda (CloudFormation no detecta cambios dentro del .zip).
+#
+#  Para borrar el stack: primero vacía el bucket del Data Lake (CloudFormation
+#  no borra buckets con objetos).
+# =============================================================================
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "General" }
+        Parameters: [Environment, AlertEmail, NasaApiKey]
+      - Label: { default: "Código de las Lambdas" }
+        Parameters: [CodeBucket, CodePrefix, PandasLayerArn]
+      - Label: { default: "Costos y operación" }
+        Parameters: [BudgetLimitUsd, MetricsReservedConcurrency, LogRetentionDays]
+
+# -----------------------------------------------------------------------------
+#  PARÁMETROS
+# -----------------------------------------------------------------------------
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Entorno de ejecución. Se agrega al nombre de los recursos.
+
+  AlertEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    ConstraintDescription: Debe ser un correo válido.
+    Description: Correo que recibe las alertas de fallas (SNS) y de presupuesto (Budgets).
+
+  NasaApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >-
+      OPCIONAL. Si lo dejas VACÍO (recomendado), debes haber creado antes, a mano, el
+      parámetro SecureString /asteroid/<Environment>/nasa_api_key en SSM Parameter Store.
+      Si pones un valor, la plantilla lo guarda como String SIN cifrar (NoEcho solo
+      lo oculta en la consola de CloudFormation); úsalo solo para pruebas (p. ej. DEMO_KEY).
+
+  CodeBucket:
+    Type: String
+    Description: Bucket S3 EXISTENTE donde subiste los .zip de las Lambdas.
+
+  CodePrefix:
+    Type: String
+    Default: lambda/
+    Description: Prefijo dentro de CodeBucket donde están los .zip (debe terminar en "/").
+
+  PandasLayerArn:
+    Type: String
+    AllowedPattern: "^arn:aws:lambda:[a-z0-9-]+:[0-9]{12}:layer:[A-Za-z0-9_-]+:[0-9]+$"
+    ConstraintDescription: Debe ser un ARN de layer con número de versión al final.
+    Description: >-
+      ARN del layer administrado AWSSDKPandas-Python312 (x86_64) de tu región.
+      Aporta pandas y pyarrow, que Lambda no incluye.
+
+  BudgetLimitUsd:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Límite mensual (USD) de AWS Budget. Alerta al 80 % del gasto real.
+
+  MetricsReservedConcurrency:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    Description: >-
+      Concurrencia reservada de la Lambda de métricas. Usa 1 para evitar que dos
+      ejecuciones simultáneas se pisen (DROP + CTAS sobre la misma carpeta). 0 = sin
+      reserva (las cuentas nuevas con límite de 10 no permiten reservar).
+
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90]
+    Description: Días que se conservan los logs de CloudWatch.
+
+Conditions:
+  CrearParametroApiKey: !Not [!Equals [!Ref NasaApiKey, ""]]
+  UsaConcurrenciaReservada: !Not [!Equals [!Ref MetricsReservedConcurrency, 0]]
+
+Resources:
+  # ===========================================================================
+  #  S3: Data Lake (Bronze / Silver / Cuarentena / Gold) en un solo bucket
+  # ===========================================================================
+  DataLakeBucket:
+    Type: AWS::S3::Bucket
+    # El nombre se construye con Sub (no con Ref) en los permisos para evitar
+    # una dependencia circular entre el bucket y las Lambdas que lo notifican.
+    DependsOn:
+      - TransformSilverInvokePermission
+      - MetricsGoldInvokePermission
+    Properties:
+      BucketName: !Sub "asteroid-data-lake-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: LimpiarResultadosDeAthena
+            Status: Enabled
+            Prefix: athena-results/
+            ExpirationInDays: 7
+          - Id: AbortarSubidasIncompletas
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      NotificationConfiguration:
+        LambdaConfigurations:
+          # bronze/*.json  ->  transform_silver
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt TransformSilverFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - { Name: prefix, Value: "bronze/" }
+                  - { Name: suffix, Value: ".json" }
+          # silver/*.parquet  ->  metrics_gold
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt MetricsGoldFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - { Name: prefix, Value: "silver/" }
+                  - { Name: suffix, Value: ".parquet" }
+      Tags:
+        - { Key: Proyecto, Value: asteroid-neo-risk-monitor }
+        - { Key: Entorno, Value: !Ref Environment }
+
+  # ===========================================================================
+  #  SSM Parameter Store: API key de la NASA
+  # ===========================================================================
+  # CloudFormation no puede crear parámetros SecureString. Opción recomendada:
+  # crear a mano /asteroid/<env>/nasa_api_key como SecureString (clave KMS
+  # predeterminada aws/ssm) y dejar NasaApiKey vacío; este recurso entonces no se
+  # crea. Si usas una clave KMS propia, agrega kms:Decrypt al rol ExtractBronzeRole.
+  # El handler lee con WithDecryption=True, válido para ambos tipos.
+  NasaApiKeyParameter:
+    Type: AWS::SSM::Parameter
+    Condition: CrearParametroApiKey
+    Properties:
+      Name: !Sub "/asteroid/${Environment}/nasa_api_key"
+      Type: String
+      Value: !Ref NasaApiKey
+      Description: API key de la NASA para NeoWs
+
+  # ===========================================================================
+  #  Glue Data Catalog: base de datos y tabla Silver (la tabla Gold la crea
+  #  la Lambda metrics_gold con un CTAS de Athena)
+  # ===========================================================================
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub "asteroid_db_${Environment}"
+        Description: Catálogo del Data Lake de asteroides (NEOs)
+
+  SilverAsteroidsTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: silver_asteroids
+        Description: Capa Silver - NEOs limpios y validados (Parquet)
+        TableType: EXTERNAL_TABLE
+        # Particiones declaradas con partition projection: Athena deduce las rutas
+        # year=YYYY/month=MM sin registrar particiones una por una. LÍMITE: solo
+        # ve años dentro de projection.year.range; amplíalo si se necesitan más.
+        PartitionKeys:
+          - { Name: year, Type: int }
+          - { Name: month, Type: int }
+        Parameters:
+          classification: parquet
+          EXTERNAL: "TRUE"
+          projection.enabled: "true"
+          projection.year.type: integer
+          projection.year.range: "2024,2040"
+          projection.month.type: integer
+          projection.month.range: "1,12"
+          projection.month.digits: "2"
+          storage.location.template: !Sub "s3://asteroid-data-lake-${Environment}-${AWS::AccountId}/silver/year=${!year}/month=${!month}/"
+        StorageDescriptor:
+          Location: !Sub "s3://asteroid-data-lake-${Environment}-${AWS::AccountId}/silver/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - { Name: neo_id, Type: string }
+            - { Name: name, Type: string }
+            - { Name: absolute_magnitude_h, Type: double }
+            - { Name: is_potentially_hazardous, Type: boolean }
+            - { Name: estimated_diameter_min_km, Type: double }
+            - { Name: estimated_diameter_max_km, Type: double }
+            - { Name: close_approach_date, Type: string }
+            - { Name: relative_velocity_km_h, Type: double }
+            - { Name: miss_distance_km, Type: double }
+            - { Name: orbiting_body, Type: string }
+
+  # ===========================================================================
+  #  CloudWatch Logs (se crean explícitamente para fijar la retención)
+  # ===========================================================================
+  ExtractBronzeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/asteroid-extract-bronze-${Environment}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  TransformSilverLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/asteroid-transform-silver-${Environment}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  MetricsGoldLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/asteroid-metrics-gold-${Environment}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ===========================================================================
+  #  IAM: un rol por Lambda con mínimo privilegio
+  # ===========================================================================
+  ExtractBronzeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ExtractBronzeAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${ExtractBronzeLogGroup.Arn}:*"
+              - Sid: EscribirBronze
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/bronze/*"
+              - Sid: LeerApiKey
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/asteroid/${Environment}/nasa_api_key"
+
+  TransformSilverRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TransformSilverAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${TransformSilverLogGroup.Arn}:*"
+              - Sid: LeerBronze
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/bronze/*"
+              - Sid: EscribirSilverYCuarentena
+                Effect: Allow
+                Action: s3:PutObject
+                Resource:
+                  - !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/silver/*"
+                  - !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/cuarentena/*"
+
+  MetricsGoldRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: MetricsGoldAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${MetricsGoldLogGroup.Arn}:*"
+              - Sid: AthenaQueries
+                Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                  - athena:GetWorkGroup
+                Resource: !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/primary"
+              - Sid: GlueCatalog
+                Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:CreateTable
+                  - glue:DeleteTable
+                  - glue:UpdateTable
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchGetPartition
+                Resource:
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/asteroid_db_${Environment}"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/asteroid_db_${Environment}/*"
+              - Sid: ListarBucket
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}"
+              - Sid: LeerSilver
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/silver/*"
+              - Sid: EscribirGoldYResultadosAthena
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:AbortMultipartUpload
+                  - s3:ListMultipartUploadParts
+                Resource:
+                  - !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/gold/*"
+                  - !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}/athena-results/*"
+
+  # ===========================================================================
+  #  Lambdas
+  # ===========================================================================
+  ExtractBronzeFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ExtractBronzeLogGroup
+    Properties:
+      FunctionName: !Sub "asteroid-extract-bronze-${Environment}"
+      Description: Bronze - descarga el JSON de NeoWs y lo guarda crudo en S3
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt ExtractBronzeRole.Arn
+      Timeout: 60
+      MemorySize: 128
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub "${CodePrefix}extract_bronze.zip"
+      Environment:
+        Variables:
+          BUCKET_NAME: !Sub "asteroid-data-lake-${Environment}-${AWS::AccountId}"
+          SSM_API_KEY_NAME: !Sub "/asteroid/${Environment}/nasa_api_key"
+
+  TransformSilverFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: TransformSilverLogGroup
+    Properties:
+      FunctionName: !Sub "asteroid-transform-silver-${Environment}"
+      Description: Silver - aplana, valida (cuarentena) y convierte a Parquet
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt TransformSilverRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Layers:
+        - !Ref PandasLayerArn
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub "${CodePrefix}transform_silver.zip"
+      Environment:
+        Variables:
+          BUCKET_NAME: !Sub "asteroid-data-lake-${Environment}-${AWS::AccountId}"
+
+  MetricsGoldFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: MetricsGoldLogGroup
+    Properties:
+      FunctionName: !Sub "asteroid-metrics-gold-${Environment}"
+      Description: Gold - CTAS en Athena con masa, energía de impacto y Risk Score
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt MetricsGoldRole.Arn
+      # El polling de Athena puede esperar hasta 120 s por consulta (DROP + CTAS).
+      Timeout: 300
+      MemorySize: 128
+      ReservedConcurrentExecutions: !If [UsaConcurrenciaReservada, !Ref MetricsReservedConcurrency, !Ref "AWS::NoValue"]
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub "${CodePrefix}metrics_gold.zip"
+      Environment:
+        Variables:
+          BUCKET_NAME: !Sub "asteroid-data-lake-${Environment}-${AWS::AccountId}"
+          ATHENA_DATABASE: !Ref GlueDatabase
+          # Prefijo aparte: NO debe ser bronze/ ni silver/ (dispararía triggers).
+          ATHENA_OUTPUT_LOCATION: !Sub "s3://asteroid-data-lake-${Environment}-${AWS::AccountId}/athena-results/"
+
+  # ---------------------------------------------------------------------------
+  #  Permisos para que S3 invoque a las Lambdas
+  # ---------------------------------------------------------------------------
+  TransformSilverInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TransformSilverFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}"
+
+  MetricsGoldInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MetricsGoldFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:aws:s3:::asteroid-data-lake-${Environment}-${AWS::AccountId}"
+
+  # ===========================================================================
+  #  EventBridge: ejecución diaria de la ingesta (01:00 UTC)
+  # ===========================================================================
+  DailyIngestionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "asteroid-cron-daily-${Environment}"
+      Description: Dispara la ingesta Bronze una vez al día
+      ScheduleExpression: "cron(0 1 * * ? *)"
+      State: ENABLED
+      Targets:
+        - Id: ExtractBronzeTarget
+          Arn: !GetAtt ExtractBronzeFunction.Arn
+
+  ExtractBronzeEventsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ExtractBronzeFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyIngestionRule.Arn
+
+  # ===========================================================================
+  #  Alertas: SNS + alarmas de CloudWatch (necesidad N4 del RFP)
+  # ===========================================================================
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "asteroid-alerts-${Environment}"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  ExtractBronzeErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "asteroid-extract-bronze-errores-${Environment}"
+      AlarmDescription: Falló la ingesta diaria Bronze (NASA, SSM o S3)
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - { Name: FunctionName, Value: !Ref ExtractBronzeFunction }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  TransformSilverErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "asteroid-transform-silver-errores-${Environment}"
+      AlarmDescription: Falló la transformación Silver (esquema, lectura o escritura)
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - { Name: FunctionName, Value: !Ref TransformSilverFunction }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  MetricsGoldErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "asteroid-metrics-gold-errores-${Environment}"
+      AlarmDescription: Falló el cálculo de métricas Gold (Athena)
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - { Name: FunctionName, Value: !Ref MetricsGoldFunction }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # Con concurrencia reservada, una 2.ª invocación simultánea de Gold se
+  # THROTTLEA (no cuenta como Error): Lambda la reintenta hasta ~6 h y luego la
+  # descarta. Esta alarma avisa si ocurre.
+  MetricsGoldThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: UsaConcurrenciaReservada
+    Properties:
+      AlarmName: !Sub "asteroid-metrics-gold-throttles-${Environment}"
+      AlarmDescription: Gold fue limitada por concurrencia reservada (ejecuciones simultáneas)
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - { Name: FunctionName, Value: !Ref MetricsGoldFunction }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ===========================================================================
+  #  AWS Budget: alerta de costos (entregable E4)
+  # ===========================================================================
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "asteroid-presupuesto-mensual-${Environment}"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+# -----------------------------------------------------------------------------
+#  SALIDAS
+# -----------------------------------------------------------------------------
+Outputs:
+  DataLakeBucketName:
+    Description: Bucket del Data Lake (bronze/, silver/, cuarentena/, gold/)
+    Value: !Ref DataLakeBucket
+  AthenaDatabase:
+    Description: Base de datos de Athena / Glue
+    Value: !Ref GlueDatabase
+  GoldTable:
+    Description: Tabla Gold que consultan las pantallas (la crea metrics_gold)
+    Value: !Sub "${GlueDatabase}.asteroid_risk_metrics"
+  ExtractBronzeFunctionName:
+    Description: Lambda a probar manualmente con {"target_date":"YYYY-MM-DD"}
+    Value: !Ref ExtractBronzeFunction
+  AlertTopicArn:
+    Description: Tópico SNS de alertas operativas
+    Value: !Ref AlertTopic

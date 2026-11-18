@@ -37,15 +37,6 @@
       "y": 0
     },
     {
-      "id": "ssm",
-      "label": "SSM Parameter Store",
-      "sub": "API Key",
-      "type": "storage",
-      "group": "aws-cloud",
-      "x": 300,
-      "y": 0
-    },
-    {
       "id": "lambda-ext",
       "label": "AWS Lambda Extracción Cripto",
       "sub": "lambda_ext",
@@ -58,7 +49,7 @@
     {
       "id": "s3-bronze",
       "label": "S3 Bronze",
-      "sub": "(Raw CSV)",
+      "sub": "(JSON crudo)",
       "type": "storage",
       "icon": "aws/s3",
       "group": "medallion-lake",
@@ -88,9 +79,19 @@
       "y": 300
     },
     {
+      "id": "gold-ready",
+      "label": "S3 control/gold-ready/",
+      "sub": "Marcador al terminar Silver o backfill",
+      "type": "storage",
+      "icon": "aws/s3",
+      "group": "medallion-lake",
+      "x": 850,
+      "y": 300
+    },
+    {
       "id": "lambda-metrics",
-      "label": "AWS Lambda",
-      "sub": "lambda_metrics / Estrategia Trading RSI / Bollinger / MACD",
+      "label": "AWS Lambda signals_gold",
+      "sub": "CTAS y estrategia RSI / Bollinger / MACD",
       "type": "function",
       "icon": "aws/lambda",
       "group": "medallion-lake",
@@ -143,12 +144,6 @@
       "label": "cron_daily"
     },
     {
-      "id": "e2",
-      "from": "ssm",
-      "to": "lambda-ext",
-      "label": "2. Lecture credenciaot"
-    },
-    {
       "id": "e3",
       "from": "api-ext",
       "to": "lambda-ext"
@@ -157,7 +152,7 @@
       "id": "e4",
       "from": "lambda-ext",
       "to": "s3-bronze",
-      "label": "1. Ingesta CSV"
+      "label": "1. Ingesta JSON"
     },
     {
       "id": "e5",
@@ -173,39 +168,45 @@
     },
     {
       "id": "e7",
-      "from": "s3-silver",
+      "from": "lambda-trans",
+      "to": "gold-ready",
+      "label": "4. Marcador al completar Silver"
+    },
+    {
+      "id": "e13",
+      "from": "gold-ready",
       "to": "lambda-metrics",
-      "label": "4. Análisis Técnico"
+      "label": "5. Trigger de Gold"
     },
     {
       "id": "e8",
       "from": "lambda-metrics",
       "to": "s3-gold",
-      "label": "5. Guardado de Señales"
+      "label": "6. Guardado de Señales"
     },
     {
       "id": "e9",
       "from": "s3-silver",
       "to": "athena",
-      "label": "6. Escaneo Parquet"
+      "label": "7. Escaneo Parquet"
     },
     {
       "id": "e10",
       "from": "s3-gold",
       "to": "athena",
-      "label": "7. Lectura Señales"
+      "label": "8. Lectura Señales"
     },
     {
       "id": "e11",
       "from": "usuarios",
       "to": "athena",
-      "label": "8. Consultas analíticas"
+      "label": "9. Consultas analíticas"
     },
     {
       "id": "e12",
       "from": "dashboard",
       "to": "athena",
-      "label": "9. Visualización de resultados"
+      "label": "10. Visualización de resultados"
     }
   ]
 }

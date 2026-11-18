@@ -37,10 +37,10 @@ El uso de un servidor encendido permanentemente genera costos fijos acumulados p
 |---|---|---|
 | Esquema de cobro | Facturacion por hora continua ($0.0208 USD/h) | Facturacion por milisegundo de ejecucion util |
 | Horas facturadas al mes | 720 horas continuas | ~0.025 horas (90 segundos acumulados al mes) |
-| Costo mensual de computo | $14.98 USD / mes ($179.76 USD / ano) | $0.000025 USD / mes (cubierto por la capa gratuita) |
+| Costo mensual de computo | $14.98 USD / mes ($179.76 USD / ano) | ~$0.00075 USD / mes, antes de descuentos, para 45 GB-s (512 MB durante 90 s); no incluye otros servicios AWS |
 | Costo de administracion | Mantenimiento de SO, parches y reinicios | Cero administracion de servidores subyacentes |
 
-La transicion a AWS Lambda reduce el gasto de computo directo en mas del 99.9%, cumpliendo el objetivo del RFP de justificar un ahorro operativo contundente ante la federacion.
+La transicion a AWS Lambda reduce el gasto de computo directo en mas del 99.9% bajo estos supuestos de ejecucion. Esta comparacion estima computo y no incluye el costo total de S3, Glue, Athena, CloudWatch, SNS, Parameter Store ni transferencia de datos; el ahorro mensual total debe validarse con la calculadora de AWS y la factura EC2 que entregue el cliente.
 
 ### 2.4 Evaluacion frente a AWS Glue / PySpark
 

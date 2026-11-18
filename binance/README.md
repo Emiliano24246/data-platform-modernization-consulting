@@ -1,6 +1,6 @@
 # Pipeline de Senales de Mercado Binance (MarketMatrix)
 
-Pipeline serverless por lotes (batch) orientado a eventos para la extraccion diaria de velas (klines) de Bitcoin (BTCUSDT) desde la API de Binance, validacion de completitud de datos, calculo de indicadores tecnicos (RSI, Bandas de Bollinger y MACD) y generacion de senales de trading (COMPRA FUERTE, VENTA, MANTENER) mediante Amazon Athena y arquitectura medallon en Amazon S3.
+Pipeline serverless por lotes orientado a eventos para extraer velas diarias BTCUSDT de la API publica de Binance, validarlas, calcular indicadores tecnicos y publicar senales de trading en Athena. Usa un solo bucket S3 con prefijos Bronze, Silver, cuarentena, Gold y resultados de Athena.
 
 ---
 
@@ -10,7 +10,17 @@ El pipeline automatiza el procesamiento diario de datos de mercado para la mesa 
 
 1. **Capa Bronze (`bronze/`):** Almacena el payload crudo e intacto de la vela diaria de Binance junto con metadatos de auditoria (marca de tiempo de ingesta, endpoint de origen y simbolo). La operacion es idempotente: multiples ejecuciones para el mismo dia sobreescriben la particion determinista correspondiente sin duplicar registros.
 2. **Capa Silver (`silver/`):** Detonada automaticamente por notificaciones de Amazon S3 (`s3:ObjectCreated:*`) sobre el prefijo `bronze/`. Valida la estructura y consistencia numerica de la vela. Si el dato es invalido o incompleto, se aisla en la carpeta `cuarentena/` y se aborta el flujo. Si el dato es integro, calcula con precision de 64 bits los indicadores tecnicos (RSI 14, Bollinger 20 con 2 desviaciones estandar y MACD 12/26/9) y lo persiste en formato columnar Parquet.
-3. **Capa Gold (`gold/`):** Detonada automaticamente por notificaciones de Amazon S3 sobre el prefijo `silver/`. Aplica la estrategia de triple confirmacion y ejecuta una consulta CTAS (Create Table As Select) en Amazon Athena para materializar las senales listas para consulta SQL por parte de los sistemas de trading.
+3. **Capa Gold (`gold/`):** Silver publica un marcador en `control/gold-ready/` al completar una transformacion o un backfill. Ese marcador activa Gold, que ejecuta una consulta CTAS en Athena y materializa las senales.
+
+### Convenciones de indicadores
+
+Hasta recibir y comparar la linea base del cliente, estas formulas son supuestos explicitos, no una verificacion de la tolerancia `0.000001` del SOW:
+
+- RSI(14): promedio simple de los primeros 14 cambios y suavizado Wilder posterior; primer valor en la fila 15 de precios.
+- Bollinger(20, 2): desviacion estandar poblacional (`ddof=0`).
+- MACD(12, 26, 9): EMA iniciadas con SMA de cada periodo; la linea de senal tambien se inicia con SMA.
+
+La linea base de 90 dias del cliente debe confirmar estos metodos y la diferencia numerica antes de afirmar que E3 cumple.
 
 ---
 
@@ -24,7 +34,7 @@ Amazon EventBridge (Programacion diaria 00:05 UTC)
 | Lambda: extract_bronze        | <--- API publica de Binance (BTCUSDT)
 +-------------------------------+
        |
-       | (Pone objeto con fecha de ingesta)
+       | (Pone la vela cerrada de ayer UTC)
        v
 Amazon S3: bucket/bronze/year=YYYY/month=MM/BTCUSDT_YYYYMMDD.json
        |
@@ -38,7 +48,7 @@ Amazon S3: bucket/bronze/year=YYYY/month=MM/BTCUSDT_YYYYMMDD.json
        v
 Amazon S3: bucket/silver/year=YYYY/month=MM/BTCUSDT_YYYYMMDD.parquet
        |
-       | (Evento s3:ObjectCreated en prefix 'silver/')
+       | (Marcador `control/gold-ready/` tras completar Silver)
        v
 +-------------------------------+
 | Lambda: signals_gold          |
@@ -53,7 +63,7 @@ Amazon Athena / S3: bucket/gold/signals/ (Tabla SQL lista para la mesa de contro
 Para evitar que una funcion Lambda se dispare a si misma:
 - La regla de EventBridge dispara unicamente a `extract_bronze`.
 - La notificacion S3 para `transform_silver` escucha exclusivamente el prefijo `bronze/` y escribe en `silver/` y `cuarentena/`.
-- La notificacion S3 para `signals_gold` escucha exclusivamente el prefijo `silver/` y escribe en `gold/` y `athena_query_results/`.
+- La notificacion S3 para `signals_gold` escucha exclusivamente `control/gold-ready/` y escribe en `gold/` y `athena-results/`.
 - El prefijo `gold/` no tiene ningun listener ni notificacion configurada, cerrando el ciclo de eventos de forma segura.
 
 ---
@@ -72,8 +82,8 @@ binance/
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
     ├── adr/
     │   └── ADR-01-Lambda_vs_Glue.md  # Registro de decision de arquitectura
-    ├── ArquitecturaBinance.jpg       # Diagrama de arquitectura Binance (jpg)
-    └── ArquitecturaBinance.json      # Diagrama de arquitectura Binance (json)
+    ├── ArquitecturaBinance.jpg       # Vista previa visual anterior
+    └── ArquitecturaBinance.json      # Fuente actual del diagrama
 ```
 
 ---
@@ -102,30 +112,34 @@ Las decisiones tecnicas y justificaciones cuantitativas de diseno para este proy
 
 El despliegue de la infraestructura esta proyectado para realizarse a traves de AWS CloudFormation. El siguiente flujo resume los pasos generales para el aprovisionamiento, sujeto a ajustes conforme evolucione el desarrollo:
 
-1. **Revision de la plantilla de infraestructura:** Verificar los recursos declarados en `infra/template.yaml` (bucket S3 por capas, roles IAM de minimo privilegio, funciones Lambda, catalogo en Glue y regla de EventBridge).
-2. **Empaquetado de artefactos:** Generar los paquetes de codigo para cada funcion Lambda ubicadas en el directorio `src/`.
-3. **Creacion del stack en CloudFormation:** Ejecutar el aprovisionamiento del stack mediante la consola de AWS o AWS CLI proporcionando los parametros base (entorno, correo para notificaciones de SNS y simbolo de mercado).
-4. **Validacion de notificaciones y permisos:** Confirmar la suscripcion del correo electronico en Amazon SNS y verificar que las funciones Lambda tengan permisos de lectura y escritura restringidos a sus respectivos prefijos en S3.
-5. **Comprobacion inicial:** Ejecutar una corrida manual de la funcion de extraccion para validar la creacion del objeto en Bronze y constatar la ejecucion en cadena hacia Silver y Gold.
+1. **Empaquetado de artefactos:** Crear `extract_bronze.zip`, `transform_silver.zip` y `signals_gold.zip`, cada uno con `handler.py` en la raiz, y subirlos al prefijo indicado por `CodeBucket`/`CodePrefix`.
+2. **Layer de Silver:** Obtener el ARN vigente del layer `AWSSDKPandas-Python312` para la region y arquitectura de despliegue. Incluye pandas y pyarrow.
+3. **Creacion del stack:** Desplegar `infra/template.yaml` proporcionando bucket y prefijo de codigo, ARN del layer, entorno, correo de alertas y limite del AWS Budget.
+4. **Validacion de notificaciones y permisos:** Confirmar la suscripcion SNS y comprobar los permisos de cada Lambda. Para limitar Gold a una ejecucion, desplegar con `GoldReservedConcurrency=1` si la cuenta AWS permite reservar concurrencia.
+5. **Comprobacion inicial:** Ejecutar Extract para generar el objeto Bronze y comprobar el marcador Gold y el resultado en Athena.
+
+### Reprocesamiento historico
+
+Invoca `transform_silver` manualmente con `{"mode": "backfill"}`. El proceso lee y ordena los JSON de Bronze del simbolo configurado, recalcula todos los indicadores, sobrescribe los Parquet Silver y publica un unico marcador para Gold. Deben existir las velas diarias consecutivas; si falta una, el proceso falla para evitar indicadores calculados sobre una serie incompleta. No ejecutes varias cargas historicas en paralelo.
 
 ---
 
 ## 7. Ejecucion de pruebas y verificacion de resultados
 
-El repositorio cuenta con una suite de pruebas unitarias y de integracion construidas sobre la biblioteca estandar `unittest` de Python.
+El repositorio cuenta con una suite de pruebas unitarias construidas sobre la biblioteca estandar `unittest` de Python.
 
 ### Ejecutar todas las pruebas
 
 Desde la raiz del repositorio:
 
 ```bash
-python3 -m unittest discover binance/tests -v
+python -m unittest discover binance/tests -v
 ```
 
-### Prueba de dos ejecuciones (Entregable E2 - Idempotencia)
-
-Para ejecutar de manera especifica la prueba que verifica que dos ejecuciones consecutivas para el mismo dia producen el mismo resultado sin duplicados:
+Las pruebas enfocadas de extraccion, validacion, indicadores, backfill y errores:
 
 ```bash
-python3 -m unittest binance/tests/test_idempotency.py -v
+python -m unittest binance.tests.test_pipeline -v
 ```
+
+Las pruebas simulan las llamadas a AWS. El despliegue requiere un layer compatible de pandas y pyarrow y no se realiza durante las pruebas locales.

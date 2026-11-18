@@ -1,0 +1,485 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Pipeline serverless de datos de fútbol (Bronze/Silver/Gold) con API-Football,
+  AWS Lambda, S3, Glue Data Catalog, Athena y alertas.
+
+# Antes del despliegue, crea /football/api_key como SecureString en SSM.
+# Sube extract_bronze.zip, transform_silver.zip y kpis_gold.zip al bucket indicado.
+# Silver requiere un layer Python 3.12 compatible que incluya pyarrow.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  AlertEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    ConstraintDescription: Debe ser un correo válido.
+  CodeBucket:
+    Type: String
+    Description: Bucket existente que contiene los ZIP de las Lambdas.
+  CodePrefix:
+    Type: String
+    Default: lambda/
+  PyArrowLayerArn:
+    Type: String
+    AllowedPattern: "^arn:aws:lambda:[a-z0-9-]+:[0-9]{12}:layer:[A-Za-z0-9_-]+:[0-9]+$"
+    Description: ARN de un layer Python 3.12 compatible que incluya pyarrow.
+  SSMApiKeyName:
+    Type: String
+    Default: /football/api_key
+    Description: Nombre del parámetro SecureString existente en SSM.
+  ApiHost:
+    Type: String
+    Default: v3.football.api-sports.io
+  LeagueId:
+    Type: String
+    Default: "1"
+  Season:
+    Type: String
+    Default: "2026"
+  GoldReservedConcurrency:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    Description: Usa 1 para serializar las reconstrucciones Gold; 0 desactiva la reserva.
+  BudgetLimitUsd:
+    Type: Number
+    Default: 5
+    MinValue: 1
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90]
+
+Conditions:
+  UsaConcurrenciaGold: !Not [!Equals [!Ref GoldReservedConcurrency, 0]]
+
+Resources:
+  DataLakeBucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - TransformSilverInvokePermission
+      - KpisGoldInvokePermission
+    Properties:
+      BucketName: !Sub "football-data-lake-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpirarResultadosAthena
+            Status: Enabled
+            Prefix: athena-results/
+            ExpirationInDays: 7
+          - Id: AbortarSubidasIncompletas
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt TransformSilverFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - { Name: prefix, Value: "bronze/" }
+                  - { Name: suffix, Value: ".json" }
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt KpisGoldFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - { Name: prefix, Value: "control/gold-ready/" }
+                  - { Name: suffix, Value: ".json" }
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub "football_db_${Environment}"
+        Description: Catálogo de datos Silver del pipeline Football.
+
+  FootballSilverTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: football_silver
+        Description: Partidos validados, uno por registro, en Parquet.
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+          - { Name: season, Type: int }
+        Parameters:
+          classification: parquet
+          EXTERNAL: "TRUE"
+          projection.enabled: "true"
+          projection.season.type: integer
+          projection.season.range: "2010,2040"
+          storage.location.template: !Sub "s3://football-data-lake-${Environment}-${AWS::AccountId}/silver/season=${!season}/"
+        StorageDescriptor:
+          Location: !Sub "s3://football-data-lake-${Environment}-${AWS::AccountId}/silver/"
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - { Name: fixture_id, Type: bigint }
+            - { Name: league_id, Type: bigint }
+            - { Name: league_name, Type: string }
+            - { Name: date, Type: string }
+            - { Name: home_team_id, Type: bigint }
+            - { Name: home_team_name, Type: string }
+            - { Name: away_team_id, Type: bigint }
+            - { Name: away_team_name, Type: string }
+            - { Name: goals_home, Type: bigint }
+            - { Name: goals_away, Type: bigint }
+            - { Name: status_short, Type: string }
+            - { Name: status_long, Type: string }
+
+  ExtractLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/football-extract-bronze-${Environment}"
+      RetentionInDays: !Ref LogRetentionDays
+  SilverLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/football-transform-silver-${Environment}"
+      RetentionInDays: !Ref LogRetentionDays
+  GoldLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/football-kpis-gold-${Environment}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  ExtractRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FootballExtractAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${ExtractLogGroup.Arn}:*"
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMApiKeyName}"
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/bronze/*"
+
+  SilverRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FootballSilverAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${SilverLogGroup.Arn}:*"
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}"
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/bronze/*"
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource:
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/silver/*"
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/cuarentena/*"
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/control/gold-ready/*"
+
+  GoldRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FootballGoldAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${GoldLogGroup.Arn}:*"
+              - Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                  - athena:GetWorkGroup
+                Resource: !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/primary"
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:CreateTable
+                  - glue:DeleteTable
+                  - glue:UpdateTable
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchGetPartition
+                Resource:
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/football_db_${Environment}"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/football_db_${Environment}/*"
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}"
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/silver/*"
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/control/gold-ready/*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:AbortMultipartUpload
+                  - s3:ListMultipartUploadParts
+                Resource:
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/gold/*"
+                  - !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}/athena-results/*"
+
+  ExtractFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ExtractLogGroup
+    Properties:
+      FunctionName: !Sub "football-extract-bronze-${Environment}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt ExtractRole.Arn
+      Timeout: 60
+      MemorySize: 128
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub "${CodePrefix}extract_bronze.zip"
+      Environment:
+        Variables:
+          BUCKET_NAME: !Sub "football-data-lake-${Environment}-${AWS::AccountId}"
+          API_HOST: !Ref ApiHost
+          LEAGUE_ID: !Ref LeagueId
+          SEASON: !Ref Season
+          SSM_API_KEY_NAME: !Ref SSMApiKeyName
+
+  TransformSilverFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SilverLogGroup
+    Properties:
+      FunctionName: !Sub "football-transform-silver-${Environment}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt SilverRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Layers: [!Ref PyArrowLayerArn]
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub "${CodePrefix}transform_silver.zip"
+      Environment:
+        Variables:
+          BUCKET_NAME: !Sub "football-data-lake-${Environment}-${AWS::AccountId}"
+
+  KpisGoldFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - GoldLogGroup
+      - FootballSilverTable
+    Properties:
+      FunctionName: !Sub "football-kpis-gold-${Environment}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt GoldRole.Arn
+      Timeout: 600
+      MemorySize: 256
+      ReservedConcurrentExecutions: !If
+        - UsaConcurrenciaGold
+        - !Ref GoldReservedConcurrency
+        - !Ref "AWS::NoValue"
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Sub "${CodePrefix}kpis_gold.zip"
+      Environment:
+        Variables:
+          BUCKET_NAME: !Sub "football-data-lake-${Environment}-${AWS::AccountId}"
+          ATHENA_DATABASE: !Ref GlueDatabase
+          ATHENA_OUTPUT_LOCATION: !Sub "s3://football-data-lake-${Environment}-${AWS::AccountId}/athena-results/"
+          SILVER_TABLE: football_silver
+          GOLD_TABLE: football_kpis_gold
+
+  TransformSilverInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TransformSilverFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}"
+  KpisGoldInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref KpisGoldFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:aws:s3:::football-data-lake-${Environment}-${AWS::AccountId}"
+
+  DailyIngestionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "football-daily-ingestion-${Environment}"
+      Description: Consulta a las 12:00 UTC los partidos del día anterior.
+      ScheduleExpression: "cron(0 12 * * ? *)"
+      State: ENABLED
+      Targets:
+        - Id: ExtractBronzeTarget
+          Arn: !GetAtt ExtractFunction.Arn
+  ExtractSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ExtractFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyIngestionRule.Arn
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "football-alerts-${Environment}"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  ExtractErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "football-extract-errors-${Environment}"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ExtractFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+  SilverErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "football-silver-errors-${Environment}"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref TransformSilverFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+  GoldErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "football-gold-errors-${Environment}"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref KpisGoldFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+  GoldThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: UsaConcurrenciaGold
+    Properties:
+      AlarmName: !Sub "football-gold-throttles-${Environment}"
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{ Name: FunctionName, Value: !Ref KpisGoldFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "football-monthly-${Environment}"
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+        TimeUnit: MONTHLY
+        BudgetType: COST
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+Outputs:
+  DataLakeBucketName:
+    Value: !Ref DataLakeBucket
+  AthenaDatabase:
+    Value: !Ref GlueDatabase
+  SilverTable:
+    Value: football_silver
+  GoldTable:
+    Value: football_kpis_gold
+  GoldReadyPrefix:
+    Value: control/gold-ready/

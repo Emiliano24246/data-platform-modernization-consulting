@@ -6,20 +6,22 @@ Pipeline serverless por lotes (batch) orientado a eventos para la ingesta de par
 
 ## 1. Descripcion del sistema
 
-1. **Capa Bronze (`bronze/`):** Descarga el JSON original e intacto de los partidos de la jornada desde API-Football utilizando credenciales seguras de Parameter Store. Guarda los datos bajo la clave `bronze/year=YYYY/month=MM/fixtures_YYYYMMDD.json`.
-2. **Capa Silver (`silver/`):** Se activa automaticamente por eventos de Amazon S3 en `bronze/`. Valida la integridad estructural de los partidos y consistencia de goles. Envia datos corruptos a `cuarentena/` y genera archivos limpios en formato Parquet particionados por temporada (`silver/season=YYYY/fixtures_YYYYMMDD.parquet`).
-3. **Capa Gold (`gold/`):** Se activa automaticamente al llegar archivos a `silver/`. Materializa tablas analiticas con efectividad y metricas por equipo en Athena.
+1. **Capa Bronze (`bronze/`):** A las 12:00 UTC, la extraccion consulta los partidos del dia anterior en API-Football y guarda intacta la respuesta JSON. La API key se obtiene como `SecureString` desde SSM Parameter Store. Un evento manual puede indicar `target_date`.
+2. **Capa Silver (`silver/`):** Los eventos S3 de `bronze/` activan la validacion y conversion a Parquet particionado por temporada. Los partidos aun no disputados pueden tener goles nulos y se conservan; los marcadores solo entran a los KPIs cuando su estado es final (`FT`, `AET` o `PEN`). Los registros con estructura o valores invalidos van a `cuarentena/`.
+3. **Capa Gold (`gold/`):** Silver publica un marcador en `control/gold-ready/` despues de completar la transformacion. Gold filtra partidos finalizados, reconstruye `football_kpis_gold` y crea las vistas `football_effectiveness` y `football_match_kpis` en Athena.
+
+La efectividad se expresa provisionalmente como porcentaje de victorias (`wins / matches_played * 100`). El cliente debe confirmar la formula de negocio antes de aceptar los KPIs.
 
 ---
 
 ## 2. Diagrama de arquitectura
 
 ```
-Amazon EventBridge (Programacion diaria 02:00 UTC)
+Amazon EventBridge (diario 12:00 UTC; consulta el dia anterior)
        |
        v
 +-------------------------------+
-| Lambda: extract_bronze        | <--- SSM Parameter Store (/football/api_key)
+| Lambda: extract_bronze        | <--- SSM SecureString (/football/api_key)
 +-------------------------------+ <--- API-Football
        |
        v
@@ -34,14 +36,14 @@ Amazon S3: bucket/bronze/year=YYYY/month=MM/fixtures_YYYYMMDD.json
        v
 Amazon S3: bucket/silver/season=YYYY/fixtures_YYYYMMDD.parquet
        |
-       | (Evento s3:ObjectCreated en prefix 'silver/')
+       | (Silver publica control/gold-ready/ al terminar)
        v
 +-------------------------------+
 | Lambda: kpis_gold             |
 +-------------------------------+
        |
        v
-Amazon Athena / S3: bucket/gold/kpis/ (Vistas de efectividad y KPIs para analistas)
+Amazon Athena / S3: bucket/gold/kpis/ (Tabla y vistas de KPIs para analistas)
 ```
 
 ---
@@ -60,8 +62,8 @@ football/
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
     ├── adr/
     │   └── ADR-01-Lambda_vs_EC2.md   # Registro de decision de arquitectura
-    ├── ArquitecturaFootball.jpg       # Diagrama de arquitectura Football (jpg)
-    └── ArquitecturaFootball.json      # Diagrama de arquitectura Football (json)
+    ├── ArquitecturaFootballSoccer.jpg  # Vista previa visual anterior
+    └── ArquitecturaFootballSoccer.json # Fuente del diagrama
 ```
 
 ---
@@ -78,18 +80,18 @@ Las decisiones tecnicas y justificaciones cuantitativas de diseno para este proy
 
 El despliegue de la infraestructura esta proyectado para realizarse a traves de AWS CloudFormation. El siguiente flujo resume los pasos generales para el aprovisionamiento, sujeto a ajustes conforme evolucione el desarrollo:
 
-1. **Almacenamiento de credenciales:** Registrar la clave de acceso de la API-Football de forma segura en AWS Systems Manager Parameter Store.
-2. **Revision de la plantilla de infraestructura:** Verificar los recursos declarados en `infra/template.yaml` (bucket S3 con prefijos por capas, roles de ejecucion IAM de minimo privilegio, funciones Lambda de ingesta y transformacion, y regla de EventBridge).
-3. **Empaquetado y creacion del stack:** Preparar los paquetes de despliegue para las funciones Lambda en `src/` y ejecutar la creacion del stack mediante CloudFormation suministrando los parametros iniciales (entorno, identificador de liga, temporada y correo de alertas).
-4. **Validacion de eventos y permisos:** Comprobar la suscripcion al topico de notificaciones SNS y constatar que las notificaciones S3 disparen secuencialmente la capa Silver ante nuevos archivos en Bronze.
-5. **Verificacion analitica:** Ejecutar una consulta de prueba en Athena sobre las vistas de la capa Gold para constatar la generacion de metricas.
+1. **Credencial API:** Crear en SSM Parameter Store el parametro `SecureString` `/football/api_key` (o el nombre indicado en `SSMApiKeyName`).
+2. **Artefactos y dependencias:** Crear `extract_bronze.zip`, `transform_silver.zip` y `kpis_gold.zip`, cada uno con `handler.py` en la raiz. Subirlos a `CodeBucket`/`CodePrefix`; proporcionar un ARN de layer Python 3.12 que incluya `pyarrow`.
+3. **Crear el stack:** Desplegar `infra/template.yaml` con entorno, liga, temporada, bucket de codigo, layer y correo. La plantilla crea un bucket S3 con prefijos, tabla Glue Silver, Lambdas, eventos, alarmas SNS y AWS Budget.
+4. **Validar eventos:** Confirmar la suscripcion SNS y probar la cadena Bronze → Silver → marcador Gold. Para cargar Bronze historico, invocar `transform_silver` con `{"mode":"backfill"}`; procesa los archivos en orden y publica un marcador Gold al final.
+5. **Validar KPIs:** Consultar `football_kpis_gold`, `football_effectiveness` y `football_match_kpis` en Athena. La definicion de efectividad debe ser aprobada por el cliente.
 
 ---
 
 ## 6. Pruebas y verificacion
 
-Ejecutar las pruebas unitarias y de idempotencia:
+Ejecutar las pruebas unitarias:
 
 ```bash
-python3 -m unittest discover -s football/tests -v
+python -m unittest discover -s football/tests -v
 ```

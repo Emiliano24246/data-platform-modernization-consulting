@@ -5,7 +5,7 @@
   "groups": [
     {
       "id": "aws-cloud",
-      "label": "AWS Cloud (us-east-1) - Free Tier · $0/mo",
+      "label": "AWS Cloud (us-east-1) - Costos monitoreados por Budget",
       "icon": "aws/group-cloud",
       "color": "coral",
       "region": "us-east-1"
@@ -29,7 +29,7 @@
     {
       "id": "cron",
       "label": "EventBridge Cron",
-      "sub": "cron_daily / 00:05 UTC",
+      "sub": "cron_daily / 12:00 UTC - query previous UTC day",
       "type": "events",
       "icon": "aws/eventbridge",
       "group": "aws-cloud",
@@ -88,9 +88,19 @@
       "y": 300
     },
     {
+      "id": "gold-ready",
+      "label": "S3 control/gold-ready/",
+      "sub": "Marcador despues de procesar Silver/backfill",
+      "type": "storage",
+      "icon": "aws/s3",
+      "group": "medallion-lake",
+      "x": 850,
+      "y": 300
+    },
+    {
       "id": "lambda-metrics",
       "label": "AWS Lambda KPIs",
-      "sub": "lambda_metrics / Cálculo de KPIs Deportivos",
+      "sub": "kpis_gold / tabla y vistas Athena",
       "type": "function",
       "icon": "aws/lambda",
       "group": "medallion-lake",
@@ -166,33 +176,39 @@
     },
     {
       "id": "e7",
-      "from": "s3-silver",
+      "from": "lambda-trans",
+      "to": "gold-ready",
+      "label": "7. Publica marcador al completar"
+    },
+    {
+      "id": "e12",
+      "from": "gold-ready",
       "to": "lambda-metrics",
-      "label": "7. Cálculo de KPIs"
+      "label": "8. Trigger de Gold"
     },
     {
       "id": "e8",
       "from": "lambda-metrics",
       "to": "s3-gold",
-      "label": "8. Guardado de KPIs"
+      "label": "9. Guardado de KPIs"
     },
     {
       "id": "e9",
       "from": "athena",
       "to": "s3-silver",
-      "label": "9. Escaneo Parquet"
+      "label": "10. Escaneo Parquet"
     },
     {
       "id": "e10",
       "from": "athena",
       "to": "s3-gold",
-      "label": "10. Lectura KPIs"
+      "label": "11. Lectura KPIs"
     },
     {
       "id": "e11",
       "from": "usuarios",
       "to": "athena",
-      "label": "11. Consultas analíticas"
+      "label": "12. Consultas analíticas"
     }
   ]
 }
