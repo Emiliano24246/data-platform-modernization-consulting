@@ -56,12 +56,19 @@ football/
 ├── infra/
 │   └── template.yaml                  # Plantilla CloudFormation base
 ├── src/
+│    ├── extract_bronze/               
+│    │   └── handler.py                # Handler para la ingestion de datos
+│    ├── transform_silver/               
+│    │   └── handler.py                # Handler para la transformacion
+│    └── kpis_gold/                 
+│        └── handler.py                # Handler para la obtencion de metricas
 ├── tests/
+│    └── test_pipeline.py              # Test para el pipeline
 └── docs/
     ├── rfp.md                         # Requerimiento formal del cliente (RFP)
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
     ├── adr/
-    │   └── ADR-01-Lambda_vs_EC2.md   # Registro de decision de arquitectura
+    │   └── ADR-01-Lambda_vs_EC2.md     # Registro de decision de arquitectura
     ├── ArquitecturaFootballSoccer.jpg  # Vista previa visual anterior
     └── ArquitecturaFootballSoccer.json # Fuente del diagrama
 ```
