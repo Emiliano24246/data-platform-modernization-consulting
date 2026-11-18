@@ -76,14 +76,21 @@ binance/
 ├── infra/
 │   └── template.yaml                  # Plantilla CloudFormation base
 ├── src/
+│    ├── extract_bronze/                
+│    │   └── handler.py                # Handler para la ingestion de datos
+│    ├── extract_silver/                
+│    │   └── handler.py                # Handler para la transformacion
+│    └── extract_gold/                 
+│        └── handler.py                # Handler para la obtencion de señales
 ├── tests/
+│    └── test_pipeline.py              # Tests para el pipeline
 └── docs/
     ├── rfp.md                         # Requerimiento formal del cliente (RFP)
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
     ├── adr/
-    │   └── ADR-01-Lambda_vs_Glue.md  # Registro de decision de arquitectura
-    ├── ArquitecturaBinance.jpg       # Vista previa visual anterior
-    └── ArquitecturaBinance.json      # Fuente actual del diagrama
+    │   └── ADR-01-Lambda_vs_Glue.md   # Registro de decision de arquitectura
+    ├── ArquitecturaBinance.jpg        # Vista previa visual anterior
+    └── ArquitecturaBinance.json       # Fuente actual del diagrama
 ```
 
 ---
