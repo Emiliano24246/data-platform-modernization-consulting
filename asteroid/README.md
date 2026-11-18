@@ -54,7 +54,14 @@ asteroid/
 ├── infra/
 │   └── template.yaml                  # Plantilla CloudFormation base
 ├── src/
+│    ├── extract_bronze/               
+│    │   └── handler.py                # Handler para la ingestion de datos
+│    ├── extract_silver/               
+│    │   └── handler.py                # Handler para la transformacion
+│    └── extract_gold/                  
+│        └── handler.py                # Handler para la obtencion de metricas
 ├── tests/
+│    └── test_transform_silver.py      # Test para la transformacion
 └── docs/
     ├── rfp.md                         # Requerimiento formal del cliente (RFP)
     ├── sow.md                         # Alcance de trabajo y compromisos (SOW)
