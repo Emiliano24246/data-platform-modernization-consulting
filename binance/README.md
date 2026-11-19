@@ -74,13 +74,13 @@ Para evitar que una funcion Lambda se dispare a si misma:
 binance/
 ├── README.md                          # Documentacion tecnica del proyecto
 ├── infra/
-│   └── template.yaml                  # Plantilla CloudFormation base
+│   └── template.yaml                  # Plantilla CloudFormation completa
 ├── src/
 │    ├── extract_bronze/                
 │    │   └── handler.py                # Handler para la ingestion de datos
-│    ├── extract_silver/                
+│    ├── transform_silver/                
 │    │   └── handler.py                # Handler para la transformacion
-│    └── extract_gold/                 
+│    └── signals_gold/                 
 │        └── handler.py                # Handler para la obtencion de señales
 ├── tests/
 │    └── test_pipeline.py              # Tests para el pipeline
@@ -115,38 +115,121 @@ Las decisiones tecnicas y justificaciones cuantitativas de diseno para este proy
 
 ---
 
-## 6. Boceto de despliegue en AWS (Referencia preliminar)
+## 6. Guia paso a paso para el levantamiento en AWS
 
-El despliegue de la infraestructura esta proyectado para realizarse a traves de AWS CloudFormation. El siguiente flujo resume los pasos generales para el aprovisionamiento, sujeto a ajustes conforme evolucione el desarrollo:
+### Paso 1: Prerrequisitos
+1. Cuenta de AWS activa con credenciales configuradas (Consola o AWS CLI con permisos de IAM, CloudFormation, Lambda, S3, Glue y Athena).
+2. Crear un bucket S3 para almacenar el codigo de las Lambdas (por ejemplo, en la region `us-east-1`):
+   ```bash
+   aws s3 mb s3://binance-code-<tu-account-id> --region us-east-1
+   ```
+3. Obtener el ARN regional del layer oficial administrado `AWSSDKPandas-Python312` (arquitectura x86_64) para tu region. Para `us-east-1`:
+   `arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12`
+   *(Verifica la version vigente en la documentacion oficial de AWS SDK for pandas).*
 
-1. **Empaquetado de artefactos:** Crear `extract_bronze.zip`, `transform_silver.zip` y `signals_gold.zip`, cada uno con `handler.py` en la raiz, y subirlos al prefijo indicado por `CodeBucket`/`CodePrefix`.
-2. **Layer de Silver:** Obtener el ARN vigente del layer `AWSSDKPandas-Python312` para la region y arquitectura de despliegue. Incluye pandas y pyarrow.
-3. **Creacion del stack:** Desplegar `infra/template.yaml` proporcionando bucket y prefijo de codigo, ARN del layer, entorno, correo de alertas y limite del AWS Budget.
-4. **Validacion de notificaciones y permisos:** Confirmar la suscripcion SNS y comprobar los permisos de cada Lambda. Para limitar Gold a una ejecucion, desplegar con `GoldReservedConcurrency=1` si la cuenta AWS permite reservar concurrencia.
-5. **Comprobacion inicial:** Ejecutar Extract para generar el objeto Bronze y comprobar el marcador Gold y el resultado en Athena.
+### Paso 2: Empaquetar y subir las funciones Lambda
+Desde la carpeta `binance/src`:
+```bash
+# Empaquetar cada funcion con handler.py en la raiz del ZIP
+cd src/extract_bronze  && zip -j ../../extract_bronze.zip handler.py
+cd ../transform_silver && zip -j ../../transform_silver.zip handler.py
+cd ../signals_gold     && zip -j ../../signals_gold.zip handler.py
+cd ../..
 
-### Reprocesamiento historico
+# Subir los ZIPs al bucket de codigo
+aws s3 cp extract_bronze.zip s3://binance-code-<tu-account-id>/lambda/
+aws s3 cp transform_silver.zip s3://binance-code-<tu-account-id>/lambda/
+aws s3 cp signals_gold.zip s3://binance-code-<tu-account-id>/lambda/
+```
 
-Invoca `transform_silver` manualmente con `{"mode": "backfill"}`. El proceso lee y ordena los JSON de Bronze del simbolo configurado, recalcula todos los indicadores, sobrescribe los Parquet Silver y publica un unico marcador para Gold. Deben existir las velas diarias consecutivas; si falta una, el proceso falla para evitar indicadores calculados sobre una serie incompleta. No ejecutes varias cargas historicas en paralelo.
+### Paso 3: Despliegue con AWS CloudFormation
+
+#### Opcion A: Desde la Consola Web de AWS (Recomendada)
+1. Iniciar sesion en la consola de AWS y dirigirse al servicio **CloudFormation** en la region seleccionada (`us-east-1`).
+2. Hacer clic en **Create stack** -> **With new resources (standard)**.
+3. En **Specify template**, seleccionar **Upload a template file** y cargar el archivo `binance/infra/template.yaml`.
+4. Especificar los parametros del stack:
+   - **Stack name:** `marketmatrix-binance-pipeline`
+   - **Environment:** `dev` (o `prod`)
+   - **AlertEmail:** Tu direccion de correo electronico (donde recibiras alertas de fallas y presupuesto).
+   - **CodeBucket:** El nombre del bucket creado en el Paso 1 (`binance-code-<tu-account-id>`).
+   - **CodePrefix:** `lambda/`
+   - **PandasLayerArn:** El ARN del layer `AWSSDKPandas-Python312` en tu region.
+   - **BudgetLimitUsd:** `5` (Limite mensual para la alerta).
+5. En la seccion de opciones, avanzar hasta la pantalla de revision y marcar la casilla:
+   `[x] I acknowledge that AWS CloudFormation might create IAM resources with custom names.`
+6. Hacer clic en **Submit** y esperar a que el estado cambie a `CREATE_COMPLETE` (~2-3 minutos).
+
+#### Opcion B: Mediante AWS CLI
+```bash
+aws cloudformation deploy \
+    --template-file infra/template.yaml \
+    --stack-name marketmatrix-binance-pipeline \
+    --parameter-overrides \
+        Environment=dev \
+        AlertEmail=tu-correo@ejemplo.com \
+        CodeBucket=binance-code-<tu-account-id> \
+        CodePrefix=lambda/ \
+        PandasLayerArn=arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12 \
+        BudgetLimitUsd=5 \
+    --capabilities CAPABILITY_NAMED_IAM
+```
+
+### Paso 4: Confirmacion de suscripciones SNS y Budget
+Inmediatamente tras el despliegue, revisa tu bandeja de entrada de correo electronico y confirma los enlaces de suscripcion enviados por **AWS Notifications** (tanto para el topico de alarmas SNS como para la alerta de AWS Budgets).
 
 ---
 
-## 7. Ejecucion de pruebas y verificacion de resultados
+## 7. Pruebas y verificacion
 
-El repositorio cuenta con una suite de pruebas unitarias construidas sobre la biblioteca estandar `unittest` de Python.
-
-### Ejecutar todas las pruebas
-
-Desde la raiz del repositorio:
-
+### 1. Pruebas unitarias locales (Sin costo de AWS)
+Para verificar la logica del pipeline localmente antes de desplegar o realizar cambios:
 ```bash
-python -m unittest discover binance/tests -v
+python3 -m unittest discover -s binance/tests -v
 ```
+*(Nota: Para ejecutar las pruebas que validan formulas de pandas/pyarrow en tu equipo local, asegurate de tener instalado pandas en tu entorno: `pip install pandas pyarrow`).*
 
-Las pruebas enfocadas de extraccion, validacion, indicadores, backfill y errores:
+### 2. Verificacion en vivo en AWS
+1. **Ejecucion manual de ingesta (Bronze):**
+   - En la consola de AWS, ir a **Lambda** -> buscar la funcion `binance-extract-bronze-dev` (o el nombre generado).
+   - En la pestaña **Test**, crear un evento de prueba con payload vacio `{}` o especificando una fecha previa:
+     ```json
+     {
+       "target_date": "2026-11-17"
+     }
+     ```
+   - Hacer clic en **Test** y comprobar que retorne codigo `200` y el mensaje de exito con la clave de S3 generada.
+2. **Verificacion de la cascada de eventos (Silver y Gold):**
+   - Ir a **S3** y abrir el bucket `binance-data-lake-dev-<account-id>`.
+   - Verificar que exista el objeto en `bronze/year=YYYY/month=MM/BTCUSDT_YYYYMMDD.json`.
+   - Verificar que la creacion en Bronze haya activado automaticamente la transformacion a Parquet en `silver/year=YYYY/month=MM/BTCUSDT_YYYYMMDD.parquet`.
+   - Constatar que se haya generado el marcador en `control/gold-ready/` y las senales finales en `gold/signals/`.
+3. **Consulta de senales en Amazon Athena:**
+   - Ir al servicio **Amazon Athena**.
+   - En el editor de consultas, seleccionar el Workgroup `primary` o el configurado, y la base de datos `marketmatrix_db_dev`.
+   - Ejecutar la consulta de aceptacion:
+     ```sql
+     SELECT "date", symbol, close, rsi_14, bollinger_upper, bollinger_lower, macd_histogram, signal_action
+     FROM binance_gold_signals
+     ORDER BY "date" DESC
+     LIMIT 10;
+     ```
+   - Comprobar que responde en menos de 2 segundos escaneando menos de 100 KB.
 
-```bash
-python -m unittest binance.tests.test_pipeline -v
-```
+### 3. Reprocesamiento historico (Backfill)
+Para regenerar todo el historico disponible en Bronze y reconstruir los indicadores:
+- Invocar manualmente `transform_silver` con el payload:
+  ```json
+  {
+    "mode": "backfill"
+  }
+  ```
+- El proceso lee ordenadamente las velas de Bronze, sobreescribe las particiones Silver correspondientes y publica el marcador para actualizar la tabla Gold en Athena.
 
-Las pruebas simulan las llamadas a AWS. El despliegue requiere un layer compatible de pandas y pyarrow y no se realiza durante las pruebas locales.
+---
+
+## 8. Desmantelamiento (Teardown)
+Si deseas apagar completamente el proyecto y asegurarte de que no quede ningun recurso:
+1. Ir a **S3** y vaciar el bucket `binance-data-lake-dev-<account-id>` (CloudFormation no permite borrar buckets con objetos).
+2. Ir a **CloudFormation** -> Seleccionar `marketmatrix-binance-pipeline` -> Hacer clic en **Delete**.
+3. Eliminar el bucket de codigo `binance-code-<tu-account-id>` si ya no lo necesitas.

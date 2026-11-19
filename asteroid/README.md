@@ -52,14 +52,14 @@ Amazon Athena / S3: bucket/gold/metrics/ (Tablas de Risk Score para exhibiciones
 asteroid/
 ├── README.md                          # Documentacion tecnica del proyecto
 ├── infra/
-│   └── template.yaml                  # Plantilla CloudFormation base
+│   └── template.yaml                  # Plantilla CloudFormation completa
 ├── src/
 │    ├── extract_bronze/               
 │    │   └── handler.py                # Handler para la ingestion de datos
-│    ├── extract_silver/               
+│    ├── transform_silver/               
 │    │   └── handler.py                # Handler para la transformacion
-│    └── extract_gold/                  
-│        └── handler.py                # Handler para la obtencion de metricas
+│    └── metrics_gold/                  
+│        └── handler.py                # Handler para el calculo de metricas
 ├── tests/
 │    └── test_transform_silver.py      # Test para la transformacion
 └── docs/
@@ -81,22 +81,110 @@ Las decisiones tecnicas y justificaciones cuantitativas de diseno para este proy
 
 ---
 
-## 5. Boceto de despliegue en AWS (Referencia preliminar)
+## 5. Guia paso a paso para el levantamiento en AWS
 
-El despliegue de la infraestructura esta proyectado para realizarse a traves de AWS CloudFormation. El siguiente flujo resume los pasos generales para el aprovisionamiento, sujeto a ajustes conforme evolucione el desarrollo:
+### Paso 1: Prerrequisitos
+1. **Crear el bucket S3 para alojar el codigo:**
+   ```bash
+   aws s3 mb s3://asteroid-code-<tu-account-id> --region us-east-1
+   ```
+2. **Obtener el ARN del Layer `AWSSDKPandas-Python312` (x86_64):**
+   Para la region `us-east-1`:
+   `arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12`
+3. **Llave de API de la NASA (Opcional):**
+   - Puedes usar la llave publica de prueba `DEMO_KEY`.
+   - O crear en Parameter Store el parametro `SecureString` `/asteroid/dev/nasa_api_key` con tu llave personal de api.nasa.gov.
 
-1. **Revision de la plantilla de infraestructura:** Verificar la definicion de recursos en `infra/template.yaml` (bucket S3 por capas, roles IAM con minimo privilegio, funciones Lambda de ingesta, calidad y calculo de metricas, y regla de EventBridge).
-2. **Empaquetado de componentes:** Preparar los paquetes de codigo correspondientes a las funciones Lambda dentro de `src/`.
-3. **Creacion del stack en CloudFormation:** Ejecutar el aprovisionamiento del stack mediante la consola de AWS o AWS CLI suministrando los parametros base (entorno de ejecucion, llave de API de la NASA y correo electronico para alertas operativas).
-4. **Validacion de rutas y suscripciones:** Confirmar la suscripcion enviada al correo registrado en Amazon SNS y verificar que el bucket S3 contenga las rutas de capas (`bronze/`, `silver/`, `gold/` y `cuarentena/`).
-5. **Comprobacion de ejecucion:** Detonar una ejecucion manual de prueba para validar el procesamiento completo desde la ingesta cruda hasta la disponibilidad de tablas en Amazon Athena.
+### Paso 2: Empaquetar y subir el codigo de las Lambdas
+Desde el directorio `asteroid/src`:
+```bash
+# Empaquetar cada funcion en la raiz del ZIP
+cd src/extract_bronze   && zip -j ../../extract_bronze.zip handler.py
+cd ../transform_silver  && zip -j ../../transform_silver.zip handler.py
+cd ../metrics_gold      && zip -j ../../metrics_gold.zip handler.py
+cd ../..
+
+# Subir los ZIPs a S3
+aws s3 cp extract_bronze.zip s3://asteroid-code-<tu-account-id>/lambda/
+aws s3 cp transform_silver.zip s3://asteroid-code-<tu-account-id>/lambda/
+aws s3 cp metrics_gold.zip s3://asteroid-code-<tu-account-id>/lambda/
+```
+
+### Paso 3: Despliegue con AWS CloudFormation
+
+#### Opcion A: Desde la Consola Web de AWS
+1. Abrir **CloudFormation** en la consola de AWS en la region `us-east-1`.
+2. Hacer clic en **Create stack** -> **With new resources (standard)**.
+3. Subir el archivo de plantilla `asteroid/infra/template.yaml`.
+4. Especificar los parametros:
+   - **Stack name:** `asteroid-risk-pipeline`
+   - **Environment:** `dev` (o `prod`)
+   - **AlertEmail:** Tu correo electronico para recibir alertas.
+   - **CodeBucket:** `asteroid-code-<tu-account-id>`
+   - **CodePrefix:** `lambda/`
+   - **PandasLayerArn:** `arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12`
+   - **NasaApiKey:** Dejar vacio si creaste el parametro en SSM, o colocar `DEMO_KEY`.
+   - **BudgetLimitUsd:** `1`
+5. Avanzar a la pantalla final, marcar `[x] I acknowledge that AWS CloudFormation might create IAM resources with custom names.` y hacer clic en **Submit**.
+
+#### Opcion B: Mediante AWS CLI
+```bash
+aws cloudformation deploy \
+    --template-file infra/template.yaml \
+    --stack-name asteroid-risk-pipeline \
+    --parameter-overrides \
+        Environment=dev \
+        AlertEmail=tu-correo@ejemplo.com \
+        CodeBucket=asteroid-code-<tu-account-id> \
+        CodePrefix=lambda/ \
+        PandasLayerArn=arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12 \
+        NasaApiKey=DEMO_KEY \
+        BudgetLimitUsd=1 \
+    --capabilities CAPABILITY_NAMED_IAM
+```
+
+### Paso 4: Confirmacion de suscripciones
+Revisa tu correo electronico y confirma las suscripciones enviadas por **AWS Notifications** (SNS y AWS Budgets).
 
 ---
 
 ## 6. Pruebas y verificacion
 
-Ejecutar las pruebas unitarias:
-
+### 1. Pruebas unitarias locales
+Ejecutar la suite de pruebas unitarias locales:
 ```bash
 python3 -m unittest discover -s asteroid/tests -v
 ```
+
+### 2. Verificacion en vivo en AWS
+1. **Ejecucion manual de ingesta:**
+   - En **AWS Lambda**, abrir la funcion `asteroid-extract-bronze-dev` (o el nombre generado).
+   - En la pestaña **Test**, crear un evento de prueba:
+     ```json
+     {
+       "target_date": "2026-11-17"
+     }
+     ```
+   - Ejecutar la prueba y verificar que retorne status `200`.
+2. **Validacion de datos en S3:**
+   - En **S3**, abrir el bucket `asteroid-data-lake-dev-<account-id>`.
+   - Verificar la presencia de `bronze/year=YYYY/month=MM/neo_YYYYMMDD.json`.
+   - Comprobar que se creo `silver/year=YYYY/month=MM/neo_YYYYMMDD.parquet`.
+   - Verificar la publicacion final en `gold/metrics/`.
+3. **Consulta de Risk Score en Amazon Athena:**
+   - En **Athena**, seleccionar la base de datos `asteroid_db_dev`.
+   - Ejecutar la consulta analitica para las pantallas de museos:
+     ```sql
+     SELECT name, close_approach_date, estimated_diameter_km, relative_velocity_kmh, estimated_kinetic_energy_megatons, risk_score
+     FROM asteroid_risk_metrics
+     ORDER BY risk_score DESC
+     LIMIT 10;
+     ```
+
+---
+
+## 7. Desmantelamiento (Teardown)
+Para retirar todos los recursos y evitar cualquier cargo posterior:
+1. Vaciar el bucket S3 `asteroid-data-lake-dev-<account-id>`.
+2. En CloudFormation, seleccionar `asteroid-risk-pipeline` y hacer clic en **Delete**.
+3. Eliminar el bucket de codigo `asteroid-code-<tu-account-id>`.

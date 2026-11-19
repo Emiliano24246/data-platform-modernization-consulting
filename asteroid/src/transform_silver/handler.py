@@ -1,3 +1,4 @@
+from urllib.parse import unquote_plus
 """
 ===============================================================================
  Lambda: transform_silver — Transformación y validación de datos de asteroides
@@ -564,7 +565,7 @@ def lambda_handler(event: dict, context) -> dict:
         # ---------------------------------------------------------------
         registro_s3 = event["Records"][0]["s3"]
         bucket_origen = registro_s3["bucket"]["name"]
-        key_origen = registro_s3["object"]["key"]
+        key_origen = unquote_plus(registro_s3["object"]["key"])
 
         # Usar el bucket de la variable de entorno si está disponible;
         # de lo contrario, usar el bucket del evento

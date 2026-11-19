@@ -99,12 +99,10 @@ def _llamar_api_football(
         Exception: Para cualquier otro error de conexión o parsing.
     """
     query = urlencode({
-        "league": liga_id,
-        "season": temporada,
         "date": fecha,
         "timezone": "UTC",
     })
-    url = f"https://{host}/v3/fixtures?{query}"
+    url = f"https://{host}/fixtures?{query}"
 
     # Construir la petición con los headers de autenticación requeridos por API-Football
     peticion = urllib.request.Request(url)
@@ -263,7 +261,7 @@ def lambda_handler(event: dict, context) -> dict:
     #    los datos, sin modificar la respuesta original de la API.
     # -----------------------------------------------------------------
     endpoint_fuente = (
-        f"https://{api_host}/v3/fixtures?league={liga_id}"
+        f"https://{api_host}/fixtures?league={liga_id}"
         f"&season={temporada}&date={fecha_str}&timezone=UTC"
     )
 

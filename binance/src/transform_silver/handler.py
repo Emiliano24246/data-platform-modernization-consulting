@@ -1,3 +1,4 @@
+import io
 """
 ==============================================================================
 Lambda: transform_silver (Binance BTCUSDT - Indicadores Técnicos)

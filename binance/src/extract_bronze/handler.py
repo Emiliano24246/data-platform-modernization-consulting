@@ -19,7 +19,7 @@ Idempotencia:
     archivo en S3 (PUT es idempotente). No genera duplicados.
 
 API de Binance:
-    GET https://api.binance.com/api/v3/klines
+    GET https://data-api.binance.vision/api/v3/klines
     Parámetros: symbol, interval, limit, startTime, endTime (UTC en ms).
     Respuesta: Array de arrays con formato:
     [[open_time, open, high, low, close, volume, close_time,
@@ -65,7 +65,7 @@ s3_client = boto3.client("s3")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
 SYMBOL = os.environ.get("SYMBOL", "BTCUSDT")
 INTERVAL = os.environ.get("INTERVAL", "1d")
-BINANCE_BASE_URL = "https://api.binance.com/api/v3/klines"
+BINANCE_BASE_URL = "https://data-api.binance.vision/api/v3/klines"
 API_MAX_ATTEMPTS = 4
 API_RETRY_BASE_SECONDS = 1
 

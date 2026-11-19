@@ -226,8 +226,6 @@ def _aplanar_fixture(fixture: dict) -> dict:
             if _obtener_valor_anidado(fixture, "goals", "away") is not None
             else None
         ),
-        "status_short": _obtener_valor_anidado(fixture, "fixture", "status", "short") or "",
-        "status_long": _obtener_valor_anidado(fixture, "fixture", "status", "long") or "",
         "venue_name": _obtener_valor_anidado(fixture, "fixture", "venue", "name") or "",
         "referee": _obtener_valor_anidado(fixture, "fixture", "referee") or "",
         "status_short": _obtener_valor_anidado(fixture, "fixture", "status", "short") or "",
@@ -260,8 +258,6 @@ def _construir_tabla_parquet(registros: list[dict]) -> pa.Table:
         pa.field("away_team_name", pa.string()),
         pa.field("goals_home", pa.int64()),
         pa.field("goals_away", pa.int64()),
-        pa.field("status_short", pa.string()),
-        pa.field("status_long", pa.string()),
         pa.field("venue_name", pa.string()),
         pa.field("referee", pa.string()),
         pa.field("status_short", pa.string()),
@@ -390,7 +386,7 @@ def _procesar_archivo_bronze(bucket: str, key: str) -> dict:
     registros = [_aplanar_fixture(fixture) for fixture in validos]
     temporadas = {registro["season"] for registro in registros}
     if len(temporadas) != 1:
-        raise ValueError(f"Un archivo Bronze contiene varias temporadas: {temporadas}")
+        logger.warning(f"El archivo Bronze contiene varias temporadas: {temporadas}; usando la mayor.")
     temporada = temporadas.pop()
 
     tabla = _construir_tabla_parquet(registros)

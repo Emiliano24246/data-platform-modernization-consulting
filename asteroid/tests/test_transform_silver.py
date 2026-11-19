@@ -20,6 +20,19 @@ def _load_transform_silver():
     exceptions_stub.ClientError = ClientError
     botocore_stub.exceptions = exceptions_stub
 
+    mocked_modules = {
+        "boto3": boto3_stub,
+        "botocore": botocore_stub,
+        "botocore.exceptions": exceptions_stub,
+    }
+
+    try:
+        import pandas  # noqa: F401
+    except ImportError:
+        pandas_stub = types.ModuleType("pandas")
+        pandas_stub.DataFrame = Mock()
+        mocked_modules["pandas"] = pandas_stub
+
     module_path = (
         Path(__file__).parents[1]
         / "src"
@@ -31,14 +44,7 @@ def _load_transform_silver():
     )
     module = importlib.util.module_from_spec(spec)
 
-    with patch.dict(
-        sys.modules,
-        {
-            "boto3": boto3_stub,
-            "botocore": botocore_stub,
-            "botocore.exceptions": exceptions_stub,
-        },
-    ):
+    with patch.dict(sys.modules, mocked_modules):
         spec.loader.exec_module(module)
 
     return module
