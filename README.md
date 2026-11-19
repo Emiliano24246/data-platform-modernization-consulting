@@ -1,6 +1,6 @@
 # Data Platform Modernization Consulting
 
-Portafolio de consultoría en ingeniería de datos sobre AWS. El repositorio reúne los proyectos de clientes, cada uno con su **RFP**, su **SOW** y su **documentación técnica**. Todos están enfocados en modernizar los flujos de datos existentes hacia una arquitectura **por lotes (batch), sin servidor y con servicios básicos de AWS**, pensada para optimizar los costos y el rendimiento del sistema.
+Portafolio de consultoría en ingeniería de datos sobre AWS. El repositorio reúne los proyectos de clientes, cada uno con su **RFP**, su **SOW** y su **documentación técnica, funcional y de arquitectua**. Todos están enfocados en modernizar los flujos de datos existentes hacia una arquitectura **por lotes (batch), sin servidor y con servicios básicos de AWS**, pensada para optimizar los costos y el rendimiento del sistema.
 
 ## Objetivo
 
@@ -16,9 +16,9 @@ Mostrar cómo se diagnostica un sistema de datos existente y se convierte en una
 
 | Proyecto | Cliente | Fuente de datos | Problema | Documentos |
 |---|---|---|---|---|
-| **Football** | Dirección de Selecciones Nacionales | API-Football | Extracción en una instancia EC2 siempre encendida y consultas lentas por particionar solo por año | [RFP](football/docs/rfp.md) · [SOW](football/docs/sow.md) · [Técnica](football/docs/technical.md) |
-| **Binance** | MarketMatrix (fondo cuantitativo) | Klines de Binance | Pipeline inestable de velas e indicadores (RSI, Bollinger, MACD) | [RFP](binance/docs/rfp.md) · [SOW](binance/docs/sow.md) · [Técnica](binance/docs/technical.md) |
-| **Asteroid** | Dirección General de Exposiciones (museos) | API NeoWs de la NASA | Procesamiento manual de un JSON de más de 300 campos y pantallas con datos desactualizados | [RFP](asteroid/docs/rfp.md) · [SOW](asteroid/docs/sow.md) · [Técnica](asteroid/docs/technical.md) |
+| **Football** | Dirección de Selecciones Nacionales | API-Football | Extracción en una instancia EC2 siempre encendida y consultas lentas por particionar solo por año | [RFP](football/docs/rfp.md) · [SOW](football/docs/sow.md) · [Funcional](football/docs/football_documentacion_funcional) · [Arquitectura](football/docs/football_arquitectura_datos) |
+| **Binance** | MarketMatrix (fondo cuantitativo) | Klines de Binance | Pipeline inestable de velas e indicadores (RSI, Bollinger, MACD) | [RFP](binance/docs/rfp.md) · [SOW](binance/docs/sow.md)  · [Funcional](binance/docs/football_documentacion_funcional) · [Arquitectura](binance/docs/football_arquitectura_datos) |
+| **Asteroid** | Dirección General de Exposiciones (museos) | API NeoWs de la NASA | Procesamiento manual de un JSON de más de 300 campos y pantallas con datos desactualizados | [RFP](asteroid/docs/rfp.md) · [SOW](asteroid/docs/sow.md) · [Funcional](asteroid/docs/asteroid_documentacion_funcional) · [Arquitectura](asteroid/docs/asteroid_arquitectura_datos) |
 
 ## Arquitectura de referencia
 
@@ -88,19 +88,22 @@ Cada proyecto usa **un solo bucket de S3** con prefijos aislados por capa (`bron
 .
 ├── README.md
 ├── football/
-│   ├── docs/            rfp.md, sow.md, technical.md
+│   ├── docs/            rfp.md, sow.md, documentación funcional, arquitectura
 │   ├── src/             extract_bronze/, transform_silver/, kpis_gold/
 │   ├── tests/           test_pipeline.py
+│   ├── ppt/             presentación .pptx
 │   └── template.yaml
 ├── binance/
-│   ├── docs/            rfp.md, sow.md, technical.md
+│   ├── docs/            rfp.md, sow.md, documentación funcional, arquitectura
 │   ├── src/             extract_bronze/, transform_silver/, signals_gold/
 │   ├── tests/           test_pipeline.py
+│   ├── ppt/             presentación .pptx
 │   └── template.yaml
 └── asteroid/
-    ├── docs/            rfp.md, sow.md, technical.md
+    ├── docs/            rfp.md, sow.md, documentación funcional, arquitectura
     ├── src/             extract_bronze/, transform_silver/, metrics_gold/
     ├── tests/           test_transform_silver.py
+    ├── ppt/             presentación .pptx
     └── template.yaml
 ```
 
@@ -156,11 +159,11 @@ Cada proyecto tiene su guía paso a paso en `docs/technical.md`: empaquetado de 
 
 ## Estado del proyecto
 
-| Proyecto | RFP y SOW | Documentación técnica | Plantilla CloudFormation | Pruebas automáticas |
+| Proyecto | RFP y SOW | Documentación funcional | Arquitectura | Plantilla CloudFormation | Pruebas automáticas |
 |---|---|---|---|---|
-| Football | Sí | Sí | Sí | Ingesta, Silver y Gold |
-| Binance | Sí | Sí | Sí | Ingesta, Silver (indicadores) y Gold |
-| Asteroid | Sí | Sí | Sí | Parcial: solo Silver |
+| Football | Sí | Sí | Sí | Sí | Ingesta, Silver y Gold |
+| Binance | Sí | Sí | Sí | Sí | Ingesta, Silver (indicadores) y Gold |
+| Asteroid | Sí | Sí | Sí | Sí | Parcial: solo Silver |
 
 Pendientes: pruebas de la extracción, la cuarentena y las fórmulas Gold de Asteroid, y la prueba contra la línea base de 90 días de Binance cuando el cliente la entregue.
 
@@ -180,6 +183,6 @@ Este portafolio documenta el flujo completo de una consultoría de datos: del di
 
 ## Convenciones
 
-- Cada proyecto vive en su carpeta y siempre tiene `docs/rfp.md`, `docs/sow.md`
+- Cada proyecto vive en su carpeta y siempre tiene `docs/rfp.md`, `docs/sow.md`, `docs/documentacion_funcional`
 - El código de cada Lambda vive en `src/<función>/handler.py`, y sus pruebas en `tests/`.
 - La infraestructura de cada proyecto se define en un único `template.yaml`.
